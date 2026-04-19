@@ -23,6 +23,10 @@
     image-rendering: -moz-crisp-edges;
     image-rendering: crisp-edges;
     background: #ffffff;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: ns-resize;
   }
 </style>
 </head>
@@ -162,25 +166,25 @@
     groundY = y;
   }
 
-  let dragging = false;
-
-  canvas.addEventListener('mousedown', (e) => {
-    dragging = true;
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
     setGroundFromClient(e.clientY);
   });
-  window.addEventListener('mousemove', (e) => {
-    if (dragging) setGroundFromClient(e.clientY);
+  canvas.addEventListener('pointermove', (e) => {
+    if (e.buttons === 0 && e.pointerType === 'mouse') return;
+    if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+      e.preventDefault();
+      setGroundFromClient(e.clientY);
+    }
   });
-  window.addEventListener('mouseup', () => { dragging = false; });
-
-  canvas.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    if (e.touches[0]) setGroundFromClient(e.touches[0].clientY);
-  }, { passive: false });
-  canvas.addEventListener('touchmove', (e) => {
-    e.preventDefault();
-    if (e.touches[0]) setGroundFromClient(e.touches[0].clientY);
-  }, { passive: false });
+  canvas.addEventListener('pointerup', (e) => {
+    if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId);
+    }
+  });
+  canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
   let pos = -26;
   let frame = 0;
