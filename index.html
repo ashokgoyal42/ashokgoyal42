@@ -147,12 +147,95 @@
   const groundMin = 13;
   const groundMax = H - 1;
 
+  const RW = 10, RH = 9;
+
+  function drawRabbit(ox, oy) {
+    // Ears
+    px(ox+2, oy,   C.o); px(ox+3, oy,   C.o);
+    px(ox+6, oy,   C.o); px(ox+7, oy,   C.o);
+    px(ox+2, oy+1, C.o); px(ox+3, oy+1, C.c);
+    px(ox+6, oy+1, C.c); px(ox+7, oy+1, C.o);
+    px(ox+2, oy+2, C.o); px(ox+3, oy+2, C.c);
+    px(ox+6, oy+2, C.c); px(ox+7, oy+2, C.o);
+    // Head outline
+    px(ox+1, oy+3, C.o); px(ox+8, oy+3, C.o);
+    for (let i = 2; i <= 7; i++) px(ox+i, oy+3, C.o);
+    // Head fill
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+4, C.c);
+    // Eyes
+    px(ox+3, oy+4, C.b);
+    px(ox+6, oy+4, C.b);
+    // Body
+    px(ox,   oy+5, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+5, C.c);
+    px(ox+9, oy+5, C.o);
+    // Nose
+    px(ox+4, oy+5, C.p);
+    px(ox+5, oy+5, C.p);
+    // Body bottom
+    px(ox,   oy+6, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+6, C.c);
+    px(ox+9, oy+6, C.o);
+    // Feet / outline
+    px(ox+1, oy+7, C.o); px(ox+2, oy+7, C.o);
+    for (let i = 3; i <= 6; i++) px(ox+i, oy+7, C.c);
+    px(ox+7, oy+7, C.o); px(ox+8, oy+7, C.o);
+    px(ox+1, oy+8, C.o); px(ox+2, oy+8, C.o);
+    px(ox+7, oy+8, C.o); px(ox+8, oy+8, C.o);
+  }
+
+  const rabbits = [];
+  const MAX_RABBITS = 3;
+  const RABBIT_LIFE = 5000;
+  let score = 0;
+  let spawnTimer = 0;
+  let nextSpawn = 600 + Math.random() * 1000;
+
+  function spawnRabbit() {
+    const x = 4 + Math.floor(Math.random() * (W - RW - 8));
+    const y = 4 + Math.floor(Math.random() * (H - RH - 8));
+    rabbits.push({ x, y, born: performance.now() });
+  }
+
+  function updateRabbits(dt, now) {
+    for (let i = rabbits.length - 1; i >= 0; i--) {
+      if (now - rabbits[i].born >= RABBIT_LIFE) rabbits.splice(i, 1);
+    }
+    const lx = pos, ly = groundY - 12;
+    const lw = 24, lh = 13;
+    for (let i = rabbits.length - 1; i >= 0; i--) {
+      const r = rabbits[i];
+      if (r.x + RW > lx && r.x < lx + lw && r.y + RH > ly && r.y < ly + lh) {
+        rabbits.splice(i, 1);
+        score++;
+      }
+    }
+    spawnTimer += dt;
+    if (rabbits.length < MAX_RABBITS && spawnTimer >= nextSpawn) {
+      spawnTimer = 0;
+      nextSpawn = 600 + Math.random() * 1400;
+      spawnRabbit();
+    }
+  }
+
+  function drawScore() {
+    ctx.fillStyle = '#2b1810';
+    ctx.font = '10px monospace';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'right';
+    ctx.fillText('Score: ' + score, W - 4, 4);
+  }
+
   function draw(x, frame, standing) {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
+    for (const r of rabbits) drawRabbit(r.x, r.y);
+
     const bob = standing ? 0 : (frame === 0 ? 0 : -1);
     drawLeopard(Math.floor(x), groundY - 12 + bob, frame, standing);
+
+    drawScore();
   }
 
   function pointerToCanvas(clientX, clientY) {
@@ -239,6 +322,7 @@
         frame = 1 - frame;
       }
     }
+    updateRabbits(dt, now);
     draw(pos, frame, !walking);
     requestAnimationFrame(loop);
   }
