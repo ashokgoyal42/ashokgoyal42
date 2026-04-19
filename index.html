@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pixel Leopard</title>
+<title>Rabbit Hunt</title>
 <style>
   html, body {
     margin: 0;
@@ -14,11 +14,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    font-family: "SF Mono", "Menlo", "Courier New", monospace;
+  }
+  #stage {
+    position: relative;
+    width: 100vw;
+    max-width: 900px;
   }
   canvas {
     display: block;
-    width: 100vw;
-    max-width: 900px;
+    width: 100%;
     image-rendering: pixelated;
     image-rendering: -moz-crisp-edges;
     image-rendering: crisp-edges;
@@ -28,14 +33,68 @@
     user-select: none;
     cursor: default;
   }
+  #hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+    color: #2b1810;
+    font-weight: 700;
+    font-size: clamp(14px, 2.4vw, 22px);
+    letter-spacing: 0.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+  #title { }
+  #timer { font-variant-numeric: tabular-nums; }
+  #score { font-variant-numeric: tabular-nums; }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(255,255,255,0.88);
+    color: #2b1810;
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  #overlay.show { display: flex; }
+  #overlay .big { font-size: clamp(22px, 5vw, 42px); font-weight: 800; }
+  #overlay .sub { font-size: clamp(14px, 2.4vw, 20px); }
+  #overlay .hint { margin-top: 6px; font-size: clamp(12px, 2vw, 16px); opacity: 0.7; }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<div id="stage">
+  <canvas id="c"></canvas>
+  <div id="hud">
+    <span id="title">RABBIT HUNT</span>
+    <span id="timer">1:00</span>
+    <span id="score">Score: 0</span>
+  </div>
+  <div id="overlay">
+    <div class="big" id="overTitle">Time's up!</div>
+    <div class="sub" id="overScore">Score: 0</div>
+    <div class="hint">Tap to play again</div>
+  </div>
+</div>
 <script>
 (() => {
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
+  const titleEl = document.getElementById('title');
+  const timerEl = document.getElementById('timer');
+  const scoreEl = document.getElementById('score');
+  const overlay = document.getElementById('overlay');
+  const overScoreEl = document.getElementById('overScore');
+
   const W = 240, H = 200;
   canvas.width = W;
   canvas.height = H;
@@ -48,6 +107,8 @@
     s: '#4a2c18',
     b: '#000000',
     p: '#e87a92',
+    r: '#e02020',
+    rL: '#ff5050',
   };
 
   function px(x, y, col) {
@@ -56,9 +117,7 @@
     ctx.fillRect(x, y, 1, 1);
   }
 
-  // Compact leopard: ~24 wide x 13 tall
   function drawLeopard(ox, oy, frame, standing) {
-    // Tail (curled up over back)
     px(ox+20, oy+4, C.o);
     px(ox+21, oy+3, C.o);
     px(ox+22, oy+2, C.o);
@@ -66,25 +125,19 @@
     px(ox+21, oy+1, C.y);
     px(ox+21, oy+2, C.y);
 
-    // Body outline - back
     for (let i = 5; i <= 19; i++) px(ox+i, oy+2, C.o);
-    // Body outline - belly
     for (let i = 5; i <= 19; i++) px(ox+i, oy+8, C.o);
-    // Body right end
     px(ox+20, oy+3, C.o);
     px(ox+20, oy+5, C.o);
     px(ox+20, oy+6, C.o);
     px(ox+20, oy+7, C.o);
     px(ox+20, oy+8, C.o);
 
-    // Body fill
     for (let j = 3; j <= 6; j++) {
       for (let i = 5; i <= 19; i++) px(ox+i, oy+j, C.y);
     }
-    // Belly strip
     for (let i = 5; i <= 19; i++) px(ox+i, oy+7, C.c);
 
-    // Spots (rosettes)
     px(ox+7,  oy+3, C.s);
     px(ox+10, oy+4, C.s); px(ox+11, oy+4, C.s);
     px(ox+14, oy+3, C.s);
@@ -92,11 +145,9 @@
     px(ox+13, oy+6, C.s);
     px(ox+9,  oy+6, C.s);
 
-    // Head
     for (let j = 3; j <= 6; j++) {
       for (let i = 1; i <= 4; i++) px(ox+i, oy+j, C.y);
     }
-    // Head outline
     px(ox, oy+4, C.o);
     px(ox, oy+5, C.o);
     px(ox, oy+6, C.o);
@@ -109,23 +160,14 @@
     px(ox+3, oy+7, C.o);
     px(ox+4, oy+7, C.o);
 
-    // Ears
     px(ox+1, oy+2, C.o);
     px(ox+4, oy+2, C.o);
 
-    // Eye
     px(ox+3, oy+5, C.b);
-
-    // Nose
     px(ox, oy+4, C.p);
-
-    // Muzzle detail
     px(ox+1, oy+6, C.s);
 
-    // Legs - 4 legs, animated
-    // Front pair: cols 7, 10. Back pair: cols 16, 19.
     const legX = [7, 10, 16, 19];
-    // Two-frame walk cycle: diagonal pairs move together
     const lenA = [3, 2, 2, 3];
     const lenB = [2, 3, 3, 2];
     const lenStand = [3, 3, 3, 3];
@@ -137,68 +179,82 @@
       for (let j = 0; j < len; j++) {
         px(lx, oy + 9 + j, C.o);
       }
-      // paw
       px(lx - 1, oy + 9 + len - 1, C.o);
       px(lx + 1, oy + 9 + len - 1, C.o);
     }
+  }
+
+  const RW = 10, RH = 9;
+
+  function drawRabbit(ox, oy) {
+    px(ox+2, oy,   C.o); px(ox+3, oy,   C.o);
+    px(ox+6, oy,   C.o); px(ox+7, oy,   C.o);
+    px(ox+2, oy+1, C.o); px(ox+3, oy+1, C.c);
+    px(ox+6, oy+1, C.c); px(ox+7, oy+1, C.o);
+    px(ox+2, oy+2, C.o); px(ox+3, oy+2, C.c);
+    px(ox+6, oy+2, C.c); px(ox+7, oy+2, C.o);
+    px(ox+1, oy+3, C.o); px(ox+8, oy+3, C.o);
+    for (let i = 2; i <= 7; i++) px(ox+i, oy+3, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+4, C.c);
+    px(ox+3, oy+4, C.b);
+    px(ox+6, oy+4, C.b);
+    px(ox,   oy+5, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+5, C.c);
+    px(ox+9, oy+5, C.o);
+    px(ox+4, oy+5, C.p);
+    px(ox+5, oy+5, C.p);
+    px(ox,   oy+6, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+6, C.c);
+    px(ox+9, oy+6, C.o);
+    px(ox+1, oy+7, C.o); px(ox+2, oy+7, C.o);
+    for (let i = 3; i <= 6; i++) px(ox+i, oy+7, C.c);
+    px(ox+7, oy+7, C.o); px(ox+8, oy+7, C.o);
+    px(ox+1, oy+8, C.o); px(ox+2, oy+8, C.o);
+    px(ox+7, oy+8, C.o); px(ox+8, oy+8, C.o);
+  }
+
+  function drawBurst(cx, cy, t) {
+    // t is 0..1 progress; bright red burst growing outward
+    const r = Math.floor(2 + t * 7);
+    const col = t < 0.5 ? C.rL : C.r;
+    for (let i = -r; i <= r; i++) {
+      px(cx + i, cy, col);
+      px(cx, cy + i, col);
+    }
+    const d = Math.max(1, Math.floor(r * 0.7));
+    for (let i = -d; i <= d; i++) {
+      px(cx + i, cy + i, col);
+      px(cx + i, cy - i, col);
+    }
+    // center highlight
+    px(cx, cy, '#ffffff');
+    px(cx+1, cy, '#ffffff');
+    px(cx-1, cy, '#ffffff');
+    px(cx, cy+1, '#ffffff');
+    px(cx, cy-1, '#ffffff');
   }
 
   let groundY = Math.floor(H * 0.6);
   const groundMin = 13;
   const groundMax = H - 1;
 
-  const RW = 10, RH = 9;
-
-  function drawRabbit(ox, oy, caught) {
-    const body = caught ? '#e84a4a' : C.c;
-    // Ears
-    px(ox+2, oy,   C.o); px(ox+3, oy,   C.o);
-    px(ox+6, oy,   C.o); px(ox+7, oy,   C.o);
-    px(ox+2, oy+1, C.o); px(ox+3, oy+1, body);
-    px(ox+6, oy+1, body); px(ox+7, oy+1, C.o);
-    px(ox+2, oy+2, C.o); px(ox+3, oy+2, body);
-    px(ox+6, oy+2, body); px(ox+7, oy+2, C.o);
-    // Head outline
-    px(ox+1, oy+3, C.o); px(ox+8, oy+3, C.o);
-    for (let i = 2; i <= 7; i++) px(ox+i, oy+3, C.o);
-    // Head fill
-    for (let i = 1; i <= 8; i++) px(ox+i, oy+4, body);
-    // Eyes
-    px(ox+3, oy+4, C.b);
-    px(ox+6, oy+4, C.b);
-    // Body
-    px(ox,   oy+5, C.o);
-    for (let i = 1; i <= 8; i++) px(ox+i, oy+5, body);
-    px(ox+9, oy+5, C.o);
-    // Nose
-    px(ox+4, oy+5, C.p);
-    px(ox+5, oy+5, C.p);
-    // Body bottom
-    px(ox,   oy+6, C.o);
-    for (let i = 1; i <= 8; i++) px(ox+i, oy+6, body);
-    px(ox+9, oy+6, C.o);
-    // Feet / outline
-    px(ox+1, oy+7, C.o); px(ox+2, oy+7, C.o);
-    for (let i = 3; i <= 6; i++) px(ox+i, oy+7, body);
-    px(ox+7, oy+7, C.o); px(ox+8, oy+7, C.o);
-    px(ox+1, oy+8, C.o); px(ox+2, oy+8, C.o);
-    px(ox+7, oy+8, C.o); px(ox+8, oy+8, C.o);
-  }
-
   const rabbits = [];
   const MAX_RABBITS = 3;
   const RABBIT_LIFE = 5000;
+  const CAUGHT_DURATION = 500;
+  const GAME_DURATION = 60000;
+
   let score = 0;
   let spawnTimer = 0;
-  let nextSpawn = 600 + Math.random() * 1000;
+  let nextSpawn = 500 + Math.random() * 900;
+  let gameState = 'playing';
+  let timeLeft = GAME_DURATION;
 
   function spawnRabbit() {
     const x = 4 + Math.floor(Math.random() * (W - RW - 8));
     const y = 4 + Math.floor(Math.random() * (H - RH - 8));
     rabbits.push({ x, y, born: performance.now() });
   }
-
-  const CAUGHT_DURATION = 300;
 
   function updateRabbits(dt, now) {
     for (let i = rabbits.length - 1; i >= 0; i--) {
@@ -218,33 +274,45 @@
         score++;
       }
     }
-    spawnTimer += dt;
-    const liveCount = rabbits.filter(r => r.caught == null).length;
-    if (liveCount < MAX_RABBITS && spawnTimer >= nextSpawn) {
-      spawnTimer = 0;
-      nextSpawn = 600 + Math.random() * 1400;
-      spawnRabbit();
+    if (gameState === 'playing') {
+      spawnTimer += dt;
+      const liveCount = rabbits.filter(r => r.caught == null).length;
+      if (liveCount < MAX_RABBITS && spawnTimer >= nextSpawn) {
+        spawnTimer = 0;
+        nextSpawn = 500 + Math.random() * 1200;
+        spawnRabbit();
+      }
     }
   }
 
-  function drawScore() {
-    ctx.fillStyle = '#2b1810';
-    ctx.font = '10px monospace';
-    ctx.textBaseline = 'top';
-    ctx.textAlign = 'right';
-    ctx.fillText('Score: ' + score, W - 4, 4);
+  function formatTime(ms) {
+    if (ms < 0) ms = 0;
+    const s = Math.ceil(ms / 1000);
+    const m = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    return m + ':' + ss;
   }
 
-  function draw(x, frame, standing) {
+  function updateHud() {
+    timerEl.textContent = formatTime(timeLeft);
+    scoreEl.textContent = 'Score: ' + score;
+  }
+
+  function draw(x, frame, standing, now) {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
-    for (const r of rabbits) drawRabbit(r.x, r.y, r.caught != null);
+    for (const r of rabbits) {
+      if (r.caught != null) {
+        const t = Math.min(1, (now - r.caught) / CAUGHT_DURATION);
+        drawBurst(r.x + Math.floor(RW / 2), r.y + Math.floor(RH / 2), t);
+      } else {
+        drawRabbit(r.x, r.y);
+      }
+    }
 
     const bob = standing ? 0 : (frame === 0 ? 0 : -1);
     drawLeopard(Math.floor(x), groundY - 12 + bob, frame, standing);
-
-    drawScore();
   }
 
   function pointerToCanvas(clientX, clientY) {
@@ -279,6 +347,7 @@
   const dragThreshold = 6;
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (gameState !== 'playing') return;
     const p = pointerToCanvas(e.clientX, e.clientY);
     if (!isOnLeopard(p.x, p.y)) return;
     e.preventDefault();
@@ -311,6 +380,30 @@
   canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
   canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
+  overlay.addEventListener('click', () => {
+    resetGame();
+  });
+
+  function endGame() {
+    gameState = 'over';
+    walking = false;
+    overScoreEl.textContent = 'Score: ' + score;
+    overlay.classList.add('show');
+  }
+
+  function resetGame() {
+    score = 0;
+    timeLeft = GAME_DURATION;
+    rabbits.length = 0;
+    spawnTimer = 0;
+    nextSpawn = 500 + Math.random() * 900;
+    pos = W;
+    walking = true;
+    gameState = 'playing';
+    overlay.classList.remove('show');
+    updateHud();
+  }
+
   let pos = W;
   let frame = 0;
   let frameTimer = 0;
@@ -322,7 +415,16 @@
   function loop(now) {
     const dt = now - last;
     last = now;
-    if (walking) {
+
+    if (gameState === 'playing') {
+      timeLeft -= dt;
+      if (timeLeft <= 0) {
+        timeLeft = 0;
+        endGame();
+      }
+    }
+
+    if (walking && gameState === 'playing') {
       pos -= speed * (dt / 16.667);
       if (pos < -26) pos = W + 4;
       frameTimer += dt;
@@ -331,10 +433,13 @@
         frame = 1 - frame;
       }
     }
+
     updateRabbits(dt, now);
-    draw(pos, frame, !walking);
+    draw(pos, frame, !walking, now);
+    updateHud();
     requestAnimationFrame(loop);
   }
+  updateHud();
   requestAnimationFrame(t => { last = t; loop(t); });
 })();
 </script>
