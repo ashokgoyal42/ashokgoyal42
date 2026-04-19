@@ -186,31 +186,37 @@
 
   const RW = 10, RH = 9;
 
-  function drawRabbit(ox, oy) {
+  function drawRabbit(ox, oy, type) {
+    const body = type === 'gold' ? '#f2c430' : C.c;
     px(ox+2, oy,   C.o); px(ox+3, oy,   C.o);
     px(ox+6, oy,   C.o); px(ox+7, oy,   C.o);
-    px(ox+2, oy+1, C.o); px(ox+3, oy+1, C.c);
-    px(ox+6, oy+1, C.c); px(ox+7, oy+1, C.o);
-    px(ox+2, oy+2, C.o); px(ox+3, oy+2, C.c);
-    px(ox+6, oy+2, C.c); px(ox+7, oy+2, C.o);
+    px(ox+2, oy+1, C.o); px(ox+3, oy+1, body);
+    px(ox+6, oy+1, body); px(ox+7, oy+1, C.o);
+    px(ox+2, oy+2, C.o); px(ox+3, oy+2, body);
+    px(ox+6, oy+2, body); px(ox+7, oy+2, C.o);
     px(ox+1, oy+3, C.o); px(ox+8, oy+3, C.o);
     for (let i = 2; i <= 7; i++) px(ox+i, oy+3, C.o);
-    for (let i = 1; i <= 8; i++) px(ox+i, oy+4, C.c);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+4, body);
     px(ox+3, oy+4, C.b);
     px(ox+6, oy+4, C.b);
     px(ox,   oy+5, C.o);
-    for (let i = 1; i <= 8; i++) px(ox+i, oy+5, C.c);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+5, body);
     px(ox+9, oy+5, C.o);
     px(ox+4, oy+5, C.p);
     px(ox+5, oy+5, C.p);
     px(ox,   oy+6, C.o);
-    for (let i = 1; i <= 8; i++) px(ox+i, oy+6, C.c);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+6, body);
     px(ox+9, oy+6, C.o);
     px(ox+1, oy+7, C.o); px(ox+2, oy+7, C.o);
-    for (let i = 3; i <= 6; i++) px(ox+i, oy+7, C.c);
+    for (let i = 3; i <= 6; i++) px(ox+i, oy+7, body);
     px(ox+7, oy+7, C.o); px(ox+8, oy+7, C.o);
     px(ox+1, oy+8, C.o); px(ox+2, oy+8, C.o);
     px(ox+7, oy+8, C.o); px(ox+8, oy+8, C.o);
+    if (type === 'gold') {
+      // sparkle
+      px(ox+5, oy+6, '#ffffff');
+      px(ox+2, oy+5, '#fff0a0');
+    }
   }
 
   function drawBurst(cx, cy, t) {
@@ -250,10 +256,22 @@
   let gameState = 'playing';
   let timeLeft = GAME_DURATION;
 
-  function spawnRabbit() {
+  const goldSchedule = [
+    { at: 30000, spawned: false },
+    { at: 55000, spawned: false },
+  ];
+
+  function spawnRabbit(type) {
     const x = 4 + Math.floor(Math.random() * (W - RW - 8));
     const y = 4 + Math.floor(Math.random() * (H - RH - 8));
-    rabbits.push({ x, y, born: performance.now() });
+    const isGold = type === 'gold';
+    rabbits.push({
+      x, y,
+      born: performance.now(),
+      type: isGold ? 'gold' : 'normal',
+      life: isGold ? 3000 : RABBIT_LIFE,
+      points: isGold ? 5 : 1,
+    });
   }
 
   function updateRabbits(dt, now) {
@@ -261,23 +279,33 @@
       const r = rabbits[i];
       if (r.caught != null) {
         if (now - r.caught >= CAUGHT_DURATION) rabbits.splice(i, 1);
-      } else if (now - r.born >= RABBIT_LIFE) {
+      } else if (now - r.born >= (r.life || RABBIT_LIFE)) {
         rabbits.splice(i, 1);
       }
     }
-    const lx = pos, ly = groundY - 12;
-    const lw = 24, lh = 13;
+    // Face-only hitbox: snout/head of the leopard (~5x5)
+    const fx = pos + 0;
+    const fy = groundY - 12 + 3;
+    const fw = 5;
+    const fh = 5;
     for (const r of rabbits) {
       if (r.caught != null) continue;
-      if (r.x + RW > lx && r.x < lx + lw && r.y + RH > ly && r.y < ly + lh) {
+      if (r.x + RW > fx && r.x < fx + fw && r.y + RH > fy && r.y < fy + fh) {
         r.caught = now;
-        score++;
+        score += (r.points || 1);
       }
     }
     if (gameState === 'playing') {
+      const elapsed = GAME_DURATION - timeLeft;
+      for (const g of goldSchedule) {
+        if (!g.spawned && elapsed >= g.at) {
+          g.spawned = true;
+          spawnRabbit('gold');
+        }
+      }
       spawnTimer += dt;
-      const liveCount = rabbits.filter(r => r.caught == null).length;
-      if (liveCount < MAX_RABBITS && spawnTimer >= nextSpawn) {
+      const liveNormal = rabbits.filter(r => r.caught == null && r.type !== 'gold').length;
+      if (liveNormal < MAX_RABBITS && spawnTimer >= nextSpawn) {
         spawnTimer = 0;
         nextSpawn = 500 + Math.random() * 1200;
         spawnRabbit();
@@ -307,7 +335,7 @@
         const t = Math.min(1, (now - r.caught) / CAUGHT_DURATION);
         drawBurst(r.x + Math.floor(RW / 2), r.y + Math.floor(RH / 2), t);
       } else {
-        drawRabbit(r.x, r.y);
+        drawRabbit(r.x, r.y, r.type);
       }
     }
 
@@ -397,6 +425,7 @@
     rabbits.length = 0;
     spawnTimer = 0;
     nextSpawn = 500 + Math.random() * 900;
+    for (const g of goldSchedule) g.spawned = false;
     pos = W;
     walking = true;
     gameState = 'playing';
