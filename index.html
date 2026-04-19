@@ -219,7 +219,7 @@
   canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
   canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
-  let pos = -26;
+  let pos = W;
   let frame = 0;
   let frameTimer = 0;
   let last = performance.now();
@@ -231,8 +231,8 @@
     const dt = now - last;
     last = now;
     if (walking) {
-      pos += speed * (dt / 16.667);
-      if (pos > W + 4) pos = -26;
+      pos -= speed * (dt / 16.667);
+      if (pos < -26) pos = W + 4;
       frameTimer += dt;
       if (frameTimer >= frameInterval) {
         frameTimer -= frameInterval;
