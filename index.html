@@ -2,188 +2,175 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Pixel Leopard Walk</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Leopard</title>
 <style>
   html, body {
     margin: 0;
     padding: 0;
     height: 100%;
+    background: #ffffff;
     overflow: hidden;
-    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   canvas {
     display: block;
     width: 100vw;
-    height: 100vh;
+    max-width: 900px;
     image-rendering: pixelated;
     image-rendering: -moz-crisp-edges;
     image-rendering: crisp-edges;
+    background: #ffffff;
   }
 </style>
 </head>
 <body>
-<canvas id="stage"></canvas>
+<canvas id="c"></canvas>
 <script>
 (() => {
-  const canvas = document.getElementById('stage');
+  const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
-
-  const W = 320;
-  const H = 180;
+  const W = 240, H = 70;
   canvas.width = W;
   canvas.height = H;
   ctx.imageSmoothingEnabled = false;
 
-  const palette = {
-    '.': null,
-    'o': '#2b1810',
-    'y': '#d9a648',
-    'Y': '#e8c070',
-    'c': '#f5e6c8',
-    'p': '#e86f88',
-    'b': '#000000',
-    'w': '#ffffff',
-    's': '#3d2416',
+  const C = {
+    o: '#2b1810',
+    y: '#e0a84a',
+    c: '#fbecd0',
+    s: '#4a2c18',
+    b: '#000000',
+    p: '#e87a92',
   };
 
-  // Leopard sprite, side view facing right. 28 wide x 16 tall.
-  // Two frames for walk cycle - legs alternate.
-  const frameA = [
-    '.....................ooo....',
-    '....................osyso..o',
-    '...................osyyyoos.',
-    '..................osyyyyso..',
-    '.oo..............osyyyyso...',
-    'osyo............osyyyyso....',
-    'osyyoooooooooooosyyyyoo.....',
-    'osYYYsYYYYsYYYYYYYyYyo......',
-    'obyYsYYYYsYYYYsYYYYyyo......',
-    'opyYYYYsYYYYYYYsYYYYyo......',
-    'oocccccccccccccccccco.......',
-    '..os........os..os..os......',
-    '..oyo.......oy..oy..oy......',
-    '..oyo.......oy..oy..oy......',
-    '..ooo.......oo..oo..oo......',
-    '............................',
-  ];
-
-  const frameB = [
-    '.....................ooo....',
-    '....................osyso..o',
-    '...................osyyyoos.',
-    '..................osyyyyso..',
-    '.oo..............osyyyyso...',
-    'osyo............osyyyyso....',
-    'osyyoooooooooooosyyyyoo.....',
-    'osYYYsYYYYsYYYYYYYyYyo......',
-    'obyYsYYYYsYYYYsYYYYyyo......',
-    'opyYYYYsYYYYYYYsYYYYyo......',
-    'oocccccccccccccccccco.......',
-    '..oyo.......os..oyo.os......',
-    '..oyo.......oyo.oyo.oyo.....',
-    '...oo.......oyo..oo.oyo.....',
-    '............oo.......oo.....',
-    '............................',
-  ];
-
-  function buildSprite(rows) {
-    const h = rows.length;
-    const w = rows[0].length;
-    const off = document.createElement('canvas');
-    off.width = w;
-    off.height = h;
-    const octx = off.getContext('2d');
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const c = palette[rows[y][x]];
-        if (c) {
-          octx.fillStyle = c;
-          octx.fillRect(x, y, 1, 1);
-        }
-      }
-    }
-    return off;
+  function px(x, y, col) {
+    if (!col) return;
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y, 1, 1);
   }
 
-  const sprites = [buildSprite(frameA), buildSprite(frameB)];
-  const spriteW = sprites[0].width;
-  const spriteH = sprites[0].height;
-  const scale = 2;
+  // Compact leopard: ~24 wide x 13 tall
+  function drawLeopard(ox, oy, frame) {
+    // Tail (curled up over back)
+    px(ox+20, oy+4, C.o);
+    px(ox+21, oy+3, C.o);
+    px(ox+22, oy+2, C.o);
+    px(ox+22, oy+1, C.o);
+    px(ox+21, oy+1, C.y);
+    px(ox+21, oy+2, C.y);
 
-  function drawScene(x, frameIdx, bob) {
-    // sky gradient
-    const sky = ctx.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, '#ffb482');
-    sky.addColorStop(0.5, '#ffd9a3');
-    sky.addColorStop(1, '#f7e8c4');
-    ctx.fillStyle = sky;
+    // Body outline - back
+    for (let i = 5; i <= 19; i++) px(ox+i, oy+2, C.o);
+    // Body outline - belly
+    for (let i = 5; i <= 19; i++) px(ox+i, oy+8, C.o);
+    // Body right end
+    px(ox+20, oy+3, C.o);
+    px(ox+20, oy+5, C.o);
+    px(ox+20, oy+6, C.o);
+    px(ox+20, oy+7, C.o);
+    px(ox+20, oy+8, C.o);
+
+    // Body fill
+    for (let j = 3; j <= 6; j++) {
+      for (let i = 5; i <= 19; i++) px(ox+i, oy+j, C.y);
+    }
+    // Belly strip
+    for (let i = 5; i <= 19; i++) px(ox+i, oy+7, C.c);
+
+    // Spots (rosettes)
+    px(ox+7,  oy+3, C.s);
+    px(ox+10, oy+4, C.s); px(ox+11, oy+4, C.s);
+    px(ox+14, oy+3, C.s);
+    px(ox+16, oy+5, C.s); px(ox+17, oy+5, C.s);
+    px(ox+13, oy+6, C.s);
+    px(ox+9,  oy+6, C.s);
+
+    // Head
+    for (let j = 3; j <= 6; j++) {
+      for (let i = 1; i <= 4; i++) px(ox+i, oy+j, C.y);
+    }
+    // Head outline
+    px(ox, oy+4, C.o);
+    px(ox, oy+5, C.o);
+    px(ox, oy+6, C.o);
+    px(ox+1, oy+3, C.o);
+    px(ox+2, oy+3, C.o);
+    px(ox+3, oy+3, C.o);
+    px(ox+4, oy+3, C.o);
+    px(ox+1, oy+7, C.o);
+    px(ox+2, oy+7, C.o);
+    px(ox+3, oy+7, C.o);
+    px(ox+4, oy+7, C.o);
+
+    // Ears
+    px(ox+1, oy+2, C.o);
+    px(ox+4, oy+2, C.o);
+
+    // Eye
+    px(ox+3, oy+5, C.b);
+
+    // Nose
+    px(ox, oy+4, C.p);
+
+    // Muzzle detail
+    px(ox+1, oy+6, C.s);
+
+    // Legs - 4 legs, animated
+    // Front pair: cols 7, 10. Back pair: cols 16, 19.
+    const legX = [7, 10, 16, 19];
+    // Two-frame walk cycle: diagonal pairs move together
+    const lenA = [3, 2, 2, 3];
+    const lenB = [2, 3, 3, 2];
+    const lengths = frame === 0 ? lenA : lenB;
+
+    for (let k = 0; k < 4; k++) {
+      const lx = ox + legX[k];
+      const len = lengths[k];
+      for (let j = 0; j < len; j++) {
+        px(lx, oy + 9 + j, C.o);
+      }
+      // paw
+      px(lx - 1, oy + 9 + len - 1, C.o);
+      px(lx + 1, oy + 9 + len - 1, C.o);
+    }
+  }
+
+  function draw(x, frame) {
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
-    // sun
-    ctx.fillStyle = '#fff2b0';
-    ctx.beginPath();
-    ctx.arc(W - 60, 50, 22, 0, Math.PI * 2);
-    ctx.fill();
+    const groundY = H - 6;
+    ctx.fillStyle = '#2b1810';
+    ctx.fillRect(0, groundY, W, 1);
 
-    // distant hills
-    ctx.fillStyle = '#c78a4a';
-    for (let i = 0; i < 4; i++) {
-      const cx = (i * 90 + 40);
-      ctx.beginPath();
-      ctx.arc(cx, 130, 40, Math.PI, 0);
-      ctx.fill();
-    }
-
-    // ground
-    ctx.fillStyle = '#a8733a';
-    ctx.fillRect(0, 140, W, H - 140);
-    ctx.fillStyle = '#8b5e2b';
-    for (let gx = 0; gx < W; gx += 6) {
-      ctx.fillRect(gx + ((gx * 7) % 5), 142 + ((gx * 3) % 4), 2, 1);
-    }
-
-    // grass tufts
-    ctx.fillStyle = '#6b8f2b';
-    for (let gx = 10; gx < W; gx += 47) {
-      ctx.fillRect(gx, 138, 1, 3);
-      ctx.fillRect(gx + 2, 139, 1, 2);
-      ctx.fillRect(gx - 2, 139, 1, 2);
-    }
-
-    // leopard
-    const dw = spriteW * scale;
-    const dh = spriteH * scale;
-    const groundY = 140 - dh + 2;
-    ctx.drawImage(sprites[frameIdx], Math.floor(x), groundY + bob, dw, dh);
+    const bob = frame === 0 ? 0 : -1;
+    drawLeopard(Math.floor(x), groundY - 12 + bob, frame);
   }
 
-  let x = -spriteW * scale;
-  const speed = 0.6;
-  let frameIdx = 0;
+  let pos = -26;
+  let frame = 0;
   let frameTimer = 0;
-  const frameInterval = 140;
-  let lastTime = performance.now();
+  let last = performance.now();
+  const speed = 0.45;
+  const frameInterval = 150;
 
   function loop(now) {
-    const dt = now - lastTime;
-    lastTime = now;
-
-    x += speed * (dt / 16.6667);
-    if (x > W) x = -spriteW * scale;
-
+    const dt = now - last;
+    last = now;
+    pos += speed * (dt / 16.667);
+    if (pos > W + 4) pos = -26;
     frameTimer += dt;
     if (frameTimer >= frameInterval) {
       frameTimer -= frameInterval;
-      frameIdx = 1 - frameIdx;
+      frame = 1 - frame;
     }
-
-    const bob = frameIdx === 0 ? 0 : -1;
-    drawScene(x, frameIdx, bob);
-
+    draw(pos, frame);
     requestAnimationFrame(loop);
   }
-
-  requestAnimationFrame((t) => { lastTime = t; loop(t); });
+  requestAnimationFrame(t => { last = t; loop(t); });
 })();
 </script>
 </body>
