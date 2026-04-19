@@ -57,7 +57,7 @@
   }
 
   // Compact leopard: ~24 wide x 13 tall
-  function drawLeopard(ox, oy, frame) {
+  function drawLeopard(ox, oy, frame, standing) {
     // Tail (curled up over back)
     px(ox+20, oy+4, C.o);
     px(ox+21, oy+3, C.o);
@@ -128,7 +128,8 @@
     // Two-frame walk cycle: diagonal pairs move together
     const lenA = [3, 2, 2, 3];
     const lenB = [2, 3, 3, 2];
-    const lengths = frame === 0 ? lenA : lenB;
+    const lenStand = [3, 3, 3, 3];
+    const lengths = standing ? lenStand : (frame === 0 ? lenA : lenB);
 
     for (let k = 0; k < 4; k++) {
       const lx = ox + legX[k];
@@ -146,15 +147,30 @@
   const groundMin = 13;
   const groundMax = H - 1;
 
-  function draw(x, frame) {
+  function draw(x, frame, standing) {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
     ctx.fillStyle = '#2b1810';
     ctx.fillRect(0, groundY, W, 1);
 
-    const bob = frame === 0 ? 0 : -1;
-    drawLeopard(Math.floor(x), groundY - 12 + bob, frame);
+    const bob = standing ? 0 : (frame === 0 ? 0 : -1);
+    drawLeopard(Math.floor(x), groundY - 12 + bob, frame, standing);
+  }
+
+  function pointerToCanvas(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / rect.width) * W,
+      y: ((clientY - rect.top) / rect.height) * H,
+    };
+  }
+
+  function isOnLeopard(cx, cy) {
+    const lx = pos;
+    const ly = groundY - 12;
+    const pad = 3;
+    return cx >= lx - pad && cx <= lx + 24 + pad && cy >= ly - pad && cy <= ly + 13 + pad;
   }
 
   function setGroundFromClient(clientY) {
@@ -166,22 +182,44 @@
     groundY = y;
   }
 
+  let downOnLeopard = false;
+  let downX = 0, downY = 0;
+  let didDrag = false;
+  const dragThreshold = 6;
+
   canvas.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
-    setGroundFromClient(e.clientY);
+    const p = pointerToCanvas(e.clientX, e.clientY);
+    downX = p.x; downY = p.y; didDrag = false;
+    if (isOnLeopard(p.x, p.y)) {
+      downOnLeopard = true;
+    } else {
+      downOnLeopard = false;
+      setGroundFromClient(e.clientY);
+    }
   });
   canvas.addEventListener('pointermove', (e) => {
     if (e.buttons === 0 && e.pointerType === 'mouse') return;
     if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
       e.preventDefault();
-      setGroundFromClient(e.clientY);
+      const p = pointerToCanvas(e.clientX, e.clientY);
+      if (Math.abs(p.x - downX) > dragThreshold || Math.abs(p.y - downY) > dragThreshold) {
+        didDrag = true;
+      }
+      if (!downOnLeopard) {
+        setGroundFromClient(e.clientY);
+      }
     }
   });
   canvas.addEventListener('pointerup', (e) => {
     if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
       canvas.releasePointerCapture(e.pointerId);
     }
+    if (downOnLeopard && !didDrag) {
+      walking = !walking;
+    }
+    downOnLeopard = false;
   });
   canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
   canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
@@ -190,20 +228,23 @@
   let frame = 0;
   let frameTimer = 0;
   let last = performance.now();
+  let walking = true;
   const speed = 0.45;
   const frameInterval = 150;
 
   function loop(now) {
     const dt = now - last;
     last = now;
-    pos += speed * (dt / 16.667);
-    if (pos > W + 4) pos = -26;
-    frameTimer += dt;
-    if (frameTimer >= frameInterval) {
-      frameTimer -= frameInterval;
-      frame = 1 - frame;
+    if (walking) {
+      pos += speed * (dt / 16.667);
+      if (pos > W + 4) pos = -26;
+      frameTimer += dt;
+      if (frameTimer >= frameInterval) {
+        frameTimer -= frameInterval;
+        frame = 1 - frame;
+      }
     }
-    draw(pos, frame);
+    draw(pos, frame, !walking);
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(t => { last = t; loop(t); });
