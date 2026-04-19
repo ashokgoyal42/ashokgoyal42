@@ -26,7 +26,7 @@
     touch-action: none;
     -webkit-user-select: none;
     user-select: none;
-    cursor: ns-resize;
+    cursor: default;
   }
 </style>
 </head>
@@ -151,9 +151,6 @@
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
-    ctx.fillStyle = '#2b1810';
-    ctx.fillRect(0, groundY, W, 1);
-
     const bob = standing ? 0 : (frame === 0 ? 0 : -1);
     drawLeopard(Math.floor(x), groundY - 12 + bob, frame, standing);
   }
@@ -173,10 +170,12 @@
     return cx >= lx - pad && cx <= lx + 24 + pad && cy >= ly - pad && cy <= ly + 13 + pad;
   }
 
+  let dragOffset = 0;
+
   function setGroundFromClient(clientY) {
     const rect = canvas.getBoundingClientRect();
     const ratio = (clientY - rect.top) / rect.height;
-    let y = Math.round(ratio * H);
+    let y = Math.round(ratio * H) + dragOffset;
     if (y < groundMin) y = groundMin;
     if (y > groundMax) y = groundMax;
     groundY = y;
@@ -188,28 +187,23 @@
   const dragThreshold = 6;
 
   canvas.addEventListener('pointerdown', (e) => {
+    const p = pointerToCanvas(e.clientX, e.clientY);
+    if (!isOnLeopard(p.x, p.y)) return;
     e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
-    const p = pointerToCanvas(e.clientX, e.clientY);
     downX = p.x; downY = p.y; didDrag = false;
-    if (isOnLeopard(p.x, p.y)) {
-      downOnLeopard = true;
-    } else {
-      downOnLeopard = false;
-      setGroundFromClient(e.clientY);
-    }
+    downOnLeopard = true;
+    dragOffset = groundY - p.y;
   });
   canvas.addEventListener('pointermove', (e) => {
-    if (e.buttons === 0 && e.pointerType === 'mouse') return;
+    if (!downOnLeopard) return;
     if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
       e.preventDefault();
       const p = pointerToCanvas(e.clientX, e.clientY);
       if (Math.abs(p.x - downX) > dragThreshold || Math.abs(p.y - downY) > dragThreshold) {
         didDrag = true;
       }
-      if (!downOnLeopard) {
-        setGroundFromClient(e.clientY);
-      }
+      setGroundFromClient(e.clientY);
     }
   });
   canvas.addEventListener('pointerup', (e) => {
@@ -220,6 +214,7 @@
       walking = !walking;
     }
     downOnLeopard = false;
+    dragOffset = 0;
   });
   canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
   canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
