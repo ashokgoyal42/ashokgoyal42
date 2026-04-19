@@ -32,7 +32,7 @@
 (() => {
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
-  const W = 240, H = 70;
+  const W = 240, H = 200;
   canvas.width = W;
   canvas.height = H;
   ctx.imageSmoothingEnabled = false;
@@ -138,17 +138,49 @@
     }
   }
 
+  let groundY = Math.floor(H * 0.6);
+  const groundMin = 13;
+  const groundMax = H - 1;
+
   function draw(x, frame) {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
-    const groundY = H - 6;
     ctx.fillStyle = '#2b1810';
     ctx.fillRect(0, groundY, W, 1);
 
     const bob = frame === 0 ? 0 : -1;
     drawLeopard(Math.floor(x), groundY - 12 + bob, frame);
   }
+
+  function setGroundFromClient(clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = (clientY - rect.top) / rect.height;
+    let y = Math.round(ratio * H);
+    if (y < groundMin) y = groundMin;
+    if (y > groundMax) y = groundMax;
+    groundY = y;
+  }
+
+  let dragging = false;
+
+  canvas.addEventListener('mousedown', (e) => {
+    dragging = true;
+    setGroundFromClient(e.clientY);
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (dragging) setGroundFromClient(e.clientY);
+  });
+  window.addEventListener('mouseup', () => { dragging = false; });
+
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (e.touches[0]) setGroundFromClient(e.touches[0].clientY);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (e.touches[0]) setGroundFromClient(e.touches[0].clientY);
+  }, { passive: false });
 
   let pos = -26;
   let frame = 0;
