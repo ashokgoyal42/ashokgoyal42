@@ -48,35 +48,36 @@
   canvas.height = H;
   ctx.imageSmoothingEnabled = false;
 
-  // Pastel palette
-  const SKY = '#bdd6ea';
-  const RAIL = '#f3ede2';
-  const RAIL_SHADE = '#c8bfb3';
-  const TRACK_A = '#b8dcb0';
-  const TRACK_B = '#9ec496';
-  const LANE_LINE = '#ecf2dd';
-  const GATE = '#7a7382';
-  const GATE_HI = '#9c95a4';
-  const GATE_NUM = '#f5efe6';
-  const FINISH_A = '#f0ebe2';
-  const FINISH_B = '#55505c';
-  const GRASS = '#b8dcb0';
-  const GRASS_DARK = '#98bc92';
-  const ACCENT_RED = '#e8a0a0';
-  const PROMPT_YELLOW = '#f0d676';
-  const BANNER_BG = '#55505c';
-  const BANNER_EDGE = '#e6cf80';
+  // Readable palette: sky/grass frame a warm-tan track, deep-slate gate,
+  // high-contrast finish line, and 8 hue-distinct horses.
+  const SKY = '#8ac0d9';          // clear sky blue
+  const RAIL = '#f5eedb';         // warm off-white rail
+  const RAIL_SHADE = '#b9ac8f';   // tan rail shadow
+  const TRACK_A = '#b89464';      // light tan lane
+  const TRACK_B = '#a27f52';      // darker tan lane
+  const LANE_LINE = '#f2e2be';    // pale sand divider dashes
+  const GATE = '#2d2d3a';         // deep slate gate
+  const GATE_HI = '#5b5b70';      // slate highlight
+  const GATE_NUM = '#ffffff';     // white lane numbers
+  const FINISH_A = '#ffffff';
+  const FINISH_B = '#1a1a1a';
+  const GRASS = '#5ea05c';        // meadow green
+  const GRASS_DARK = '#3f7d3e';
+  const ACCENT_RED = '#d63838';   // classic racing red
+  const PROMPT_YELLOW = '#ffd448';
+  const BANNER_BG = '#2d2d3a';
+  const BANNER_EDGE = '#ffd448';
 
-  // 8 pastel horse colors
+  // 8 horse coats, each distinct in hue + value against the tan track.
   const HORSES = [
-    { body: '#c09672', mane: '#8a6a4a', name: '1' }, // tan
-    { body: '#7c7684', mane: '#4e4858', name: '2' }, // dusty slate
-    { body: '#ece0c8', mane: '#b8a078', name: '3' }, // cream
-    { body: '#c4c8cc', mane: '#8e9298', name: '4' }, // soft grey
-    { body: '#d09088', mane: '#8a544c', name: '5' }, // rose
-    { body: '#dcb48c', mane: '#a07850', name: '6' }, // buff
-    { body: '#967056', mane: '#604838', name: '7' }, // mocha
-    { body: '#e6c882', mane: '#a08648', name: '8' }, // soft gold
+    { body: '#8a4a24', mane: '#4a2614', name: '1' }, // bay
+    { body: '#2a2a35', mane: '#111118', name: '2' }, // black
+    { body: '#e8e2d1', mane: '#9b947f', name: '3' }, // grey-white
+    { body: '#8b8e92', mane: '#5a5c5f', name: '4' }, // dapple grey
+    { body: '#d4a84a', mane: '#8a6a20', name: '5' }, // palomino gold
+    { body: '#b56a6a', mane: '#7a4141', name: '6' }, // roan rose
+    { body: '#4e2914', mane: '#2a1608', name: '7' }, // dark bay
+    { body: '#c4703c', mane: '#7a3e1e', name: '8' }, // chestnut
   ];
 
   // Per-horse runtime state (x position, speed, animation frame, finish info)
@@ -199,7 +200,7 @@
     rect(STALL_LEFT, topY, 1, TRACK_H + 4, '#222');
     rect(STALL_RIGHT, topY, 1, TRACK_H + 4, '#222');
     // Back wall (thin padded bar)
-    rect(STALL_BACK_X, TRACK_Y, 1, TRACK_H, '#8a7560');
+    rect(STALL_BACK_X, TRACK_Y, 1, TRACK_H, '#5a3f26');
     // Lane dividers between stalls
     for (let i = 1; i < LANES; i++) {
       const y = TRACK_Y + i * LANE_H;
@@ -225,7 +226,7 @@
       rect(DOOR_X, doorTop, DOOR_W, 1, GATE_HI);
       // vertical bar accents
       for (let y = doorTop + 2; y < doorTop + doorH - 1; y += 3) {
-        px(DOOR_X + 1, y, '#4a4550');
+        px(DOOR_X + 1, y, '#14141c');
       }
       // lane number (only while the door is tall enough)
       if (doorH >= 7) {
@@ -327,7 +328,7 @@
     const scale = 2;
     const tw = measureScaled(text, scale) + 1;    // +1 for bold stroke
     const x0 = Math.floor((W - tw) / 2);
-    drawTextScaled(text, x0, 4, '#f5efe6', scale, true);
+    drawTextScaled(text, x0, 4, '#ffffff', scale, true);
   }
 
   // ---- Race state & gate-opening animation ----
@@ -473,7 +474,12 @@
     rect(bx + 1, by + boxH - 2, boxW - 2, 1, BANNER_EDGE);
     rect(bx, by, 1, boxH, BANNER_EDGE);
     rect(bx + boxW - 1, by, 1, boxH, BANNER_EDGE);
-    drawTextScaled(text, bx + 7, by + 7, HORSES[winnerIdx].body, scale, true);
+    // White 4-direction outline so any horse body color reads on the dark banner
+    const tx = bx + 7, ty = by + 7;
+    for (const [ox, oy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      drawTextScaled(text, tx + ox, ty + oy, '#ffffff', scale, true);
+    }
+    drawTextScaled(text, tx, ty, HORSES[winnerIdx].body, scale, true);
   }
 
   function startRace() {
