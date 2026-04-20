@@ -68,17 +68,19 @@
   const BANNER_BG = '#2d2d3a';
   const BANNER_EDGE = '#ffd448';
 
-  // 8 horse coats, each distinct in hue + value against the tan track.
+  // 8 horse coats paired with distinct racing-silk colors for the jockeys.
   const HORSES = [
-    { body: '#8a4a24', mane: '#4a2614', name: '1' }, // bay
-    { body: '#2a2a35', mane: '#111118', name: '2' }, // black
-    { body: '#e8e2d1', mane: '#9b947f', name: '3' }, // grey-white
-    { body: '#8b8e92', mane: '#5a5c5f', name: '4' }, // dapple grey
-    { body: '#d4a84a', mane: '#8a6a20', name: '5' }, // palomino gold
-    { body: '#b56a6a', mane: '#7a4141', name: '6' }, // roan rose
-    { body: '#4e2914', mane: '#2a1608', name: '7' }, // dark bay
-    { body: '#c4703c', mane: '#7a3e1e', name: '8' }, // chestnut
+    { body: '#8a4a24', mane: '#4a2614', silk: '#f5d03a', name: '1' }, // bay      + gold
+    { body: '#2a2a35', mane: '#111118', silk: '#d63838', name: '2' }, // black    + red
+    { body: '#e8e2d1', mane: '#9b947f', silk: '#2a5fb0', name: '3' }, // grey-w   + blue
+    { body: '#8b8e92', mane: '#5a5c5f', silk: '#d84680', name: '4' }, // dapple   + pink
+    { body: '#d4a84a', mane: '#8a6a20', silk: '#6a3d9a', name: '5' }, // palomino + purple
+    { body: '#b56a6a', mane: '#7a4141', silk: '#e8752a', name: '6' }, // roan     + orange
+    { body: '#4e2914', mane: '#2a1608', silk: '#f4f4ea', name: '7' }, // dark bay + white
+    { body: '#c4703c', mane: '#7a3e1e', silk: '#30aacd', name: '8' }, // chestnut + cyan
   ];
+  const JOCKEY_HELMET = '#14141a';
+  const JOCKEY_SKIN = '#e8b090';
 
   // Per-horse runtime state (x position, speed, animation frame, finish info)
   const horseStates = HORSES.map(() => ({ x: 0, speed: 0, noisePhase: 0, frame: 0, frameT: 0, finished: false, finishTime: 0, place: 0 }));
@@ -297,6 +299,26 @@
     }
   }
 
+  // Tiny 4x4 crouched jockey sprite sitting centered on the horse's back.
+  // Origin (ox, oy) is the top-left corner; the sprite's bottom row overlaps
+  // the top of the horse's body so the rider looks "tucked in".
+  function drawJockey(ox, oy, silk) {
+    // helmet (rows 0-1)
+    px(ox + 1, oy,     JOCKEY_HELMET);
+    px(ox + 2, oy,     JOCKEY_HELMET);
+    px(ox,     oy + 1, JOCKEY_HELMET);
+    px(ox + 1, oy + 1, JOCKEY_HELMET);
+    px(ox + 2, oy + 1, JOCKEY_HELMET);
+    // face (one skin pixel under helmet)
+    px(ox + 1, oy + 2, JOCKEY_SKIN);
+    // silks shoulders + back
+    px(ox + 2, oy + 2, silk);
+    px(ox + 3, oy + 2, silk);
+    px(ox + 1, oy + 3, silk);
+    px(ox + 2, oy + 3, silk);
+    px(ox + 3, oy + 3, silk);
+  }
+
   function drawHorses() {
     for (let i = 0; i < LANES; i++) {
       const y = TRACK_Y + i * LANE_H;
@@ -304,7 +326,10 @@
       const s = horseStates[i];
       const running = raceState === 'running' && !s.finished;
       const bob = (running && s.frame === 1) ? -1 : 0;
-      drawHorse(Math.floor(s.x), y + 3 + bob, h.body, h.mane, s.frame);
+      const hx = Math.floor(s.x);
+      drawHorse(hx, y + 3 + bob, h.body, h.mane, s.frame);
+      // Jockey sits crouched on the horse's back, centered on the body
+      drawJockey(hx + 6, y + 3 + bob, h.silk);
     }
   }
 
