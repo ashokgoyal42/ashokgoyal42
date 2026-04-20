@@ -124,58 +124,10 @@
   .seg button.active,
   .seg button.active:hover { background: #c89850; color: #1a1108; }
 
-  .journal {
-    background: #1a1510;
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-size: 13px;
-  }
-  .journal summary {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    list-style: none;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    color: #b4a898;
-  }
-  .journal summary::-webkit-details-marker { display: none; }
-  .journal summary::marker { content: ''; }
-  .journal summary::before {
-    content: '▸';
-    margin-right: 8px;
-    opacity: 0.6;
-    transition: transform 0.2s;
-    display: inline-block;
-  }
-  .journal[open] summary::before { transform: rotate(90deg); }
-  .journal .count {
-    font-size: 11px;
-    opacity: 0.6;
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-  }
-  .journal ul {
-    list-style: none;
-    padding: 0;
-    margin: 10px 0 2px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .journal li {
-    line-height: 1.45;
-    color: #d8cfbc;
-    padding-left: 12px;
-    border-left: 2px solid #6a5e48;
-  }
-  .journal li.empty {
-    color: #6a5e48;
-    font-style: italic;
-    border-left: none;
-    padding-left: 0;
-  }
+  button.harvest { background: #3a8a2c; }
+  button.harvest:hover { background: #4a9a3c; }
+  button.harvest:active { background: #2a7a1c; }
+  button[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -202,10 +154,7 @@
         </div>
       </div>
       <button id="water">Water +30%</button>
-      <details id="journal" class="journal">
-        <summary><span>Journal</span><span class="count" id="journalCount">0 / 0</span></summary>
-        <ul id="journalList"></ul>
-      </details>
+      <button id="harvest" class="harvest" hidden>Harvest</button>
     </div>
   </div>
 <script src="flowers.js"></script>
@@ -219,9 +168,8 @@
   const growthFill = document.getElementById('growthFill');
   const stageVal = document.getElementById('stageVal');
   const waterBtn = document.getElementById('water');
+  const harvestBtn = document.getElementById('harvest');
   const lightSeg = document.getElementById('lightSeg');
-  const journalCount = document.getElementById('journalCount');
-  const journalList = document.getElementById('journalList');
 
   // Logical drawing space stays 400×400 so all draw code is untouched.
   // We scale the backing store to devicePixelRatio for crisp rendering.
@@ -448,17 +396,42 @@
 
   function drawPotMessage(msg) {
     if (!msg) return;
-    const y = (POT.topY + POT.botY) / 2 + 8;
+    const midY = (POT.topY + POT.botY) / 2 + 4;
+    const maxW = 160;
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    // Inscribed / painted look: dark imprint + faint highlight beneath.
-    ctx.fillStyle = 'rgba(255,248,230,0.10)';
-    ctx.fillText(msg, CX, y + 1);
-    ctx.fillStyle = 'rgba(20,18,14,0.55)';
-    ctx.fillText(msg, CX, y);
+    const isLong = msg.length > 16;
+    ctx.font = (isLong ? '500 10.5px' : '700 13px') +
+      ' -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const lines = wrapText(msg, maxW);
+    const lineH = isLong ? 13 : 16;
+    const startY = midY - ((lines.length - 1) * lineH) / 2;
+    for (let i = 0; i < lines.length; i++) {
+      const y = startY + i * lineH;
+      ctx.fillStyle = 'rgba(255,248,230,0.10)';
+      ctx.fillText(lines[i], CX, y + 1);
+      ctx.fillStyle = 'rgba(20,18,14,0.58)';
+      ctx.fillText(lines[i], CX, y);
+    }
     ctx.restore();
+  }
+
+  function wrapText(text, maxW) {
+    const words = text.split(' ');
+    const lines = [];
+    let current = '';
+    for (const w of words) {
+      const test = current ? current + ' ' + w : w;
+      if (ctx.measureText(test).width <= maxW) {
+        current = test;
+      } else {
+        if (current) lines.push(current);
+        current = w;
+      }
+    }
+    if (current) lines.push(current);
+    return lines;
   }
 
   // Side-view leaf with tonal gradient and a soft highlight.
@@ -718,29 +691,12 @@
       btn.classList.toggle('active', btn.dataset.light === plant.light);
     }
 
-    renderJournal();
+    harvestBtn.hidden =
+      plant.isDead || plant.harvested || stage.id !== 'blooming';
   }
 
-  function renderJournal() {
-    const entries = SPECIES_M.journal;
-    const unlocked = entries
-      .filter(e => plant.journalFlags[e.trigger])
-      .sort((a, b) => plant.journalFlags[a.trigger] - plant.journalFlags[b.trigger]);
-    journalCount.textContent = unlocked.length + ' / ' + entries.length;
-    journalList.textContent = '';
-    if (unlocked.length === 0) {
-      const li = document.createElement('li');
-      li.className = 'empty';
-      li.textContent = 'Care for the plant to unlock entries.';
-      journalList.appendChild(li);
-      return;
-    }
-    for (const e of unlocked) {
-      const li = document.createElement('li');
-      li.textContent = e.text;
-      journalList.appendChild(li);
-    }
-  }
+  // Rotation period for cycling through unlocked journal entries on the pot.
+  const JOURNAL_ROTATE_MS = 7000;
 
   function currentMessage() {
     if (plant.isDead)    return 'WITHERED';
@@ -753,6 +709,16 @@
     if (m < c.stress_low)   return 'NEEDS WATER';
     if (m > c.stress_high)  return 'TOO WET';
     if (SPECIES_M.care.light.isStressed(plant.light)) return 'NEEDS LIGHT';
+
+    // Otherwise surface any unlocked journal entries, rotating slowly.
+    const unlocked = SPECIES_M.journal
+      .filter(e => plant.journalFlags[e.trigger])
+      .sort((a, b) => plant.journalFlags[a.trigger] - plant.journalFlags[b.trigger]);
+    if (unlocked.length > 0) {
+      const idx = Math.floor(Date.now() / JOURNAL_ROTATE_MS) % unlocked.length;
+      return unlocked[idx].text;
+    }
+
     if (stageId === 'blooming') return 'IN BLOOM';
     if (stageId === 'faded')    return 'FADED';
     return stageLabel(stageId).toUpperCase();
@@ -760,6 +726,12 @@
 
   waterBtn.addEventListener('click', () => {
     window.water(plant);
+    window.save(plant);
+    updateHud();
+  });
+
+  harvestBtn.addEventListener('click', () => {
+    window.harvest(plant, SPECIES_M);
     window.save(plant);
     updateHud();
   });
