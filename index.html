@@ -323,31 +323,11 @@
   }
 
   function drawTitle() {
-    // simple title bar text using our digit font? Keep it basic with filled rectangles.
-    // Draw "HORSE DERBY" in tiny caps using a very small bitmap font.
-    const FONT = {
-      'H': ['X.X','X.X','XXX','X.X','X.X'],
-      'O': ['XXX','X.X','X.X','X.X','XXX'],
-      'R': ['XX.','X.X','XX.','X.X','X.X'],
-      'S': ['XXX','X..','XXX','..X','XXX'],
-      'E': ['XXX','X..','XX.','X..','XXX'],
-      'D': ['XX.','X.X','X.X','X.X','XX.'],
-      'B': ['XX.','X.X','XX.','X.X','XX.'],
-      'Y': ['X.X','X.X','.X.','.X.','.X.'],
-      ' ': ['...','...','...','...','...'],
-    };
     const text = 'HORSE DERBY';
-    const x0 = Math.floor((W - text.length * 4) / 2);
-    const y0 = 2;
-    for (let i = 0; i < text.length; i++) {
-      const g = FONT[text[i]];
-      if (!g) continue;
-      for (let r = 0; r < 5; r++) {
-        for (let c = 0; c < 3; c++) {
-          if (g[r][c] === 'X') px(x0 + i * 4 + c, y0 + r, '#ffffff');
-        }
-      }
-    }
+    const scale = 2;
+    const tw = measureScaled(text, scale) + 1;    // +1 for bold stroke
+    const x0 = Math.floor((W - tw) / 2);
+    drawTextScaled(text, x0, 4, '#f5efe6', scale, true);
   }
 
   // ---- Race state & gate-opening animation ----
@@ -467,8 +447,10 @@
     else if (raceState === 'finished') text = 'CLICK TO RACE AGAIN';
     if (!text) return;
     if (Math.floor(promptBlink / 400) % 2 === 1) return;
-    const x0 = Math.floor((W - text.length * 4) / 2);
-    drawText(text, x0, H - 10, PROMPT_YELLOW);
+    const scale = 2;
+    const tw = measureScaled(text, scale) + 1;
+    const x0 = Math.floor((W - tw) / 2);
+    drawTextScaled(text, x0, H - 13, PROMPT_YELLOW, scale, true);
   }
 
   // Winner banner shown once the first horse has crossed the finish line
