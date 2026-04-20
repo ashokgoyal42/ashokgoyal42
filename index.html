@@ -124,6 +124,8 @@
       <button id="water">Water +30%</button>
     </div>
   </div>
+<script src="flowers.js"></script>
+<script src="plant.js"></script>
 <script>
 (() => {
   const canvas = document.getElementById('c');
@@ -540,7 +542,9 @@
   }
 
   function drawPlant() {
-    const stage = currentStage();
+    const sprite = SPECIES.marigold.stages[plant.stageIndex].sprite;
+    if (sprite === 'seed' || sprite === 'soil_crack') return;
+    const stage = { sprout: 1, leafy: 2, bud: 3, flower: 5, faded: 5 }[sprite];
     const p = stageProgress();
     const t = performance.now();
     const sway = Math.sin(t / 1400);
@@ -666,15 +670,13 @@
   }
 
   waterBtn.addEventListener('click', () => {
-    const now = Date.now();
-    advance(now - state.lastUpdate);
-    state.lastUpdate = now;
-    state.moisture = Math.min(100, state.moisture + WATER_AMOUNT);
-    save();
+    window.water(plant);
+    window.save(plant);
     updateHud();
   });
 
   load();
+  let plant = window.catchUp(window.load(), SPECIES.marigold);
   let lastSave = Date.now();
   function tick() {
     const now = Date.now();
