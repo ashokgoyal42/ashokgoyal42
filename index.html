@@ -104,6 +104,78 @@
   }
   button:hover { background: #3d87e6; }
   button:active { background: #2363b8; transform: scale(0.97); }
+
+  .seg {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+  }
+  .seg button {
+    flex: 1;
+    padding: 10px 6px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #2a2520;
+    color: #8a7e6a;
+    border-radius: 8px;
+    letter-spacing: 0.05em;
+  }
+  .seg button:hover { background: #342d26; }
+  .seg button.active,
+  .seg button.active:hover { background: #c89850; color: #1a1108; }
+
+  .journal {
+    background: #1a1510;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+  .journal summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    list-style: none;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: #b4a898;
+  }
+  .journal summary::-webkit-details-marker { display: none; }
+  .journal summary::marker { content: ''; }
+  .journal summary::before {
+    content: '▸';
+    margin-right: 8px;
+    opacity: 0.6;
+    transition: transform 0.2s;
+    display: inline-block;
+  }
+  .journal[open] summary::before { transform: rotate(90deg); }
+  .journal .count {
+    font-size: 11px;
+    opacity: 0.6;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .journal ul {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .journal li {
+    line-height: 1.45;
+    color: #d8cfbc;
+    padding-left: 12px;
+    border-left: 2px solid #6a5e48;
+  }
+  .journal li.empty {
+    color: #6a5e48;
+    font-style: italic;
+    border-left: none;
+    padding-left: 0;
+  }
 </style>
 </head>
 <body>
@@ -119,9 +191,21 @@
       <div class="row">
         <label>Growth</label>
         <div class="bar"><div id="growthFill" class="fill growth"></div></div>
-        <div id="stageVal" class="val">1 / 5</div>
+        <div id="stageVal" class="val">Seed</div>
+      </div>
+      <div class="row">
+        <label>Light</label>
+        <div class="seg" id="lightSeg">
+          <button type="button" data-light="shade">Shade</button>
+          <button type="button" data-light="window">Window</button>
+          <button type="button" data-light="direct">Direct</button>
+        </div>
       </div>
       <button id="water">Water +30%</button>
+      <details id="journal" class="journal">
+        <summary><span>Journal</span><span class="count" id="journalCount">0 / 0</span></summary>
+        <ul id="journalList"></ul>
+      </details>
     </div>
   </div>
 <script src="flowers.js"></script>
@@ -135,6 +219,9 @@
   const growthFill = document.getElementById('growthFill');
   const stageVal = document.getElementById('stageVal');
   const waterBtn = document.getElementById('water');
+  const lightSeg = document.getElementById('lightSeg');
+  const journalCount = document.getElementById('journalCount');
+  const journalList = document.getElementById('journalList');
 
   // Logical drawing space stays 400×400 so all draw code is untouched.
   // We scale the backing store to devicePixelRatio for crisp rendering.
@@ -163,58 +250,26 @@
     new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
   }
 
-  const MAX_STAGES = 5;
-  const STAGE_MS = 120000;                      // 2 real minutes per stage
-  const TOTAL_GROWTH_MS = STAGE_MS * (MAX_STAGES - 1);
-  const MIN_MOIST = 20;
-  const MAX_MOIST = 90;
-  const WATER_AMOUNT = 30;
-  const SAVE_KEY = 'marigoldState.v1';
+  const SPECIES_M = SPECIES.marigold;
 
-  const state = {
-    moisture: 60,
-    growth: 0,
-    lastUpdate: Date.now(),
-  };
+  // Migrate out the pre-schema save key.
+  try { localStorage.removeItem('marigoldState.v1'); } catch (e) {}
 
-  function advance(dtMs) {
-    if (dtMs <= 0) return;
-    const dtMin = dtMs / 60000;
-    const m0 = state.moisture;
-    // Growth window over linear decay m(τ) = m0 − τ, τ ∈ [0, dtMin]:
-    // growing while m0 − τ ∈ [MIN_MOIST, MAX_MOIST].
-    const tStart = Math.max(0, m0 - MAX_MOIST);
-    const tEnd = Math.max(0, m0 - MIN_MOIST);
-    const growMin = Math.max(
-      0,
-      Math.min(dtMin, tEnd) - Math.min(dtMin, tStart)
-    );
-    state.growth = Math.min(TOTAL_GROWTH_MS, state.growth + growMin * 60000);
-    state.moisture = Math.max(0, m0 - dtMin);
+  let plant = window.load();
+  if (!plant || typeof plant.stageIndex !== 'number') {
+    plant = window.newPlant('marigold');
+    window.save(plant);
   }
+  window.catchUp(plant, SPECIES_M);
 
-  function load() {
-    try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (raw) {
-        const s = JSON.parse(raw);
-        if (typeof s.moisture === 'number') state.moisture = s.moisture;
-        if (typeof s.growth === 'number') state.growth = s.growth;
-        if (typeof s.lastUpdate === 'number') state.lastUpdate = s.lastUpdate;
-        advance(Date.now() - state.lastUpdate);
-      }
-    } catch (e) {}
-    state.lastUpdate = Date.now();
-  }
-  function save() {
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {}
-  }
-
-  function currentStage() {
-    return Math.min(MAX_STAGES, Math.floor(state.growth / STAGE_MS) + 1);
-  }
   function stageProgress() {
-    return (state.growth % STAGE_MS) / STAGE_MS;
+    const stage = SPECIES_M.stages[plant.stageIndex];
+    if (!stage || !isFinite(stage.durationMs) || stage.durationMs <= 0) return 0;
+    return Math.min(1, plant.timeInStageMs / stage.durationMs);
+  }
+
+  function stageLabel(id) {
+    return id.charAt(0).toUpperCase() + id.slice(1).replace(/_/g, ' ');
   }
 
   // ---- Drawing (isometric-ish 2.5D) ----
@@ -383,7 +438,7 @@
     }
     ctx.restore();
 
-    if (state.moisture > MAX_MOIST) {
+    if (plant.moisture > SPECIES_M.care.moisture.stress_high) {
       ctx.fillStyle = 'rgba(80,110,180,0.22)';
       ctx.beginPath();
       ctx.ellipse(CX, SOIL_Y, SOIL_RX, SOIL_RY, 0, 0, Math.PI * 2);
@@ -648,25 +703,59 @@
   }
 
   function updateHud() {
-    const m = state.moisture;
+    const m = plant.moisture;
+    const c = SPECIES_M.care.moisture;
     moistFill.style.width = Math.max(0, Math.min(100, m)) + '%';
-    moistFill.classList.toggle('low', m < MIN_MOIST);
-    moistFill.classList.toggle('high', m > MAX_MOIST);
+    moistFill.classList.toggle('low', m < c.stress_low);
+    moistFill.classList.toggle('high', m > c.stress_high);
     moistVal.textContent = m.toFixed(1) + '%';
 
-    const stage = currentStage();
-    const growthPct = (state.growth / TOTAL_GROWTH_MS) * 100;
-    growthFill.style.width = Math.min(100, growthPct) + '%';
-    stageVal.textContent = stage + ' / ' + MAX_STAGES;
+    const stage = SPECIES_M.stages[plant.stageIndex];
+    growthFill.style.width = (stageProgress() * 100) + '%';
+    stageVal.textContent = stageLabel(stage.id);
+
+    for (const btn of lightSeg.querySelectorAll('button')) {
+      btn.classList.toggle('active', btn.dataset.light === plant.light);
+    }
+
+    renderJournal();
+  }
+
+  function renderJournal() {
+    const entries = SPECIES_M.journal;
+    const unlocked = entries
+      .filter(e => plant.journalFlags[e.trigger])
+      .sort((a, b) => plant.journalFlags[a.trigger] - plant.journalFlags[b.trigger]);
+    journalCount.textContent = unlocked.length + ' / ' + entries.length;
+    journalList.textContent = '';
+    if (unlocked.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'Care for the plant to unlock entries.';
+      journalList.appendChild(li);
+      return;
+    }
+    for (const e of unlocked) {
+      const li = document.createElement('li');
+      li.textContent = e.text;
+      journalList.appendChild(li);
+    }
   }
 
   function currentMessage() {
-    const m = state.moisture;
-    const stage = currentStage();
-    if (m < MIN_MOIST) return 'NEEDS WATER';
-    if (m > MAX_MOIST) return 'TOO WET';
-    if (stage >= MAX_STAGES) return 'IN BLOOM';
-    return 'GROWING';
+    if (plant.isDead)    return 'WITHERED';
+    if (plant.harvested) return 'HARVESTED';
+    const c = SPECIES_M.care.moisture;
+    const m = plant.moisture;
+    const stageId = SPECIES_M.stages[plant.stageIndex].id;
+    if (m <= c.lethal_low)  return 'PARCHED';
+    if (m >= c.lethal_high) return 'DROWNING';
+    if (m < c.stress_low)   return 'NEEDS WATER';
+    if (m > c.stress_high)  return 'TOO WET';
+    if (SPECIES_M.care.light.isStressed(plant.light)) return 'NEEDS LIGHT';
+    if (stageId === 'blooming') return 'IN BLOOM';
+    if (stageId === 'faded')    return 'FADED';
+    return stageLabel(stageId).toUpperCase();
   }
 
   waterBtn.addEventListener('click', () => {
@@ -675,26 +764,46 @@
     updateHud();
   });
 
-  load();
-  let plant = window.catchUp(window.load(), SPECIES.marigold);
+  for (const btn of lightSeg.querySelectorAll('button')) {
+    btn.addEventListener('click', () => {
+      window.setLight(plant, btn.dataset.light);
+      window.save(plant);
+      updateHud();
+    });
+  }
+
+  // Sim tick every second — Date-based delta so throttled intervals self-correct.
+  let lastSimTick = Date.now();
   let lastSave = Date.now();
-  function tick() {
+  setInterval(() => {
     const now = Date.now();
-    advance(now - state.lastUpdate);
-    state.lastUpdate = now;
-    updateHud();
-    render();
+    window.tick(plant, SPECIES_M, now - lastSimTick);
+    lastSimTick = now;
+    plant.lastUpdated = now;
     if (now - lastSave > 5000) {
-      save();
+      window.save(plant);
       lastSave = now;
     }
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
+    updateHud();
+  }, 1000);
 
-  window.addEventListener('beforeunload', save);
+  // Render loop at screen rate so the sway stays smooth.
+  (function renderLoop() {
+    render();
+    requestAnimationFrame(renderLoop);
+  })();
+
+  updateHud();
+
+  window.addEventListener('beforeunload', () => window.save(plant));
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) save();
+    if (document.hidden) {
+      window.save(plant);
+    } else {
+      window.catchUp(plant, SPECIES_M);
+      lastSimTick = Date.now();
+      updateHud();
+    }
   });
 })();
 </script>
