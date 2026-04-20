@@ -48,31 +48,35 @@
   canvas.height = H;
   ctx.imageSmoothingEnabled = false;
 
-  // Palette
-  const SKY = '#6ca8d6';
-  const RAIL = '#e8e8e8';
-  const RAIL_SHADE = '#9aa3aa';
-  const TRACK_A = '#4fa84a';
-  const TRACK_B = '#3e8f3a';
-  const LANE_LINE = '#d8f0c0';
-  const GATE = '#3a3a3a';
-  const GATE_HI = '#5a5a5a';
-  const GATE_NUM = '#ffffff';
-  const FINISH_A = '#ffffff';
-  const FINISH_B = '#1a1a1a';
-  const GRASS = '#4fa84a';
-  const GRASS_DARK = '#3a8a38';
+  // Pastel palette
+  const SKY = '#bdd6ea';
+  const RAIL = '#f3ede2';
+  const RAIL_SHADE = '#c8bfb3';
+  const TRACK_A = '#b8dcb0';
+  const TRACK_B = '#9ec496';
+  const LANE_LINE = '#ecf2dd';
+  const GATE = '#7a7382';
+  const GATE_HI = '#9c95a4';
+  const GATE_NUM = '#f5efe6';
+  const FINISH_A = '#f0ebe2';
+  const FINISH_B = '#55505c';
+  const GRASS = '#b8dcb0';
+  const GRASS_DARK = '#98bc92';
+  const ACCENT_RED = '#e8a0a0';
+  const PROMPT_YELLOW = '#f0d676';
+  const BANNER_BG = '#55505c';
+  const BANNER_EDGE = '#e6cf80';
 
-  // 8 horse colors
+  // 8 pastel horse colors
   const HORSES = [
-    { body: '#8b4a1a', mane: '#3a1a08', name: '1' },
-    { body: '#222222', mane: '#000000', name: '2' },
-    { body: '#e8d8b8', mane: '#a88a60', name: '3' },
-    { body: '#9aa0a6', mane: '#5a6066', name: '4' },
-    { body: '#a63319', mane: '#5a1a0a', name: '5' },
-    { body: '#c89060', mane: '#7a5030', name: '6' },
-    { body: '#5a2e0e', mane: '#2a1404', name: '7' },
-    { body: '#d4a84a', mane: '#8a6a20', name: '8' },
+    { body: '#c09672', mane: '#8a6a4a', name: '1' }, // tan
+    { body: '#7c7684', mane: '#4e4858', name: '2' }, // dusty slate
+    { body: '#ece0c8', mane: '#b8a078', name: '3' }, // cream
+    { body: '#c4c8cc', mane: '#8e9298', name: '4' }, // soft grey
+    { body: '#d09088', mane: '#8a544c', name: '5' }, // rose
+    { body: '#dcb48c', mane: '#a07850', name: '6' }, // buff
+    { body: '#967056', mane: '#604838', name: '7' }, // mocha
+    { body: '#e6c882', mane: '#a08648', name: '8' }, // soft gold
   ];
 
   // Per-horse runtime state (x position, speed, animation frame, finish info)
@@ -181,7 +185,7 @@
     rect(FINISH_X - 1, TRACK_Y - 4, 1, TRACK_H + 4, '#222');
     rect(FINISH_X + 6, TRACK_Y - 4, 1, TRACK_H + 4, '#222');
     // little flag
-    rect(FINISH_X - 1, TRACK_Y - 6, 8, 2, '#d62828');
+    rect(FINISH_X - 1, TRACK_Y - 6, 8, 2, ACCENT_RED);
   }
 
   function drawGateFrame() {
@@ -195,7 +199,7 @@
     rect(STALL_LEFT, topY, 1, TRACK_H + 4, '#222');
     rect(STALL_RIGHT, topY, 1, TRACK_H + 4, '#222');
     // Back wall (thin padded bar)
-    rect(STALL_BACK_X, TRACK_Y, 1, TRACK_H, '#4a3020');
+    rect(STALL_BACK_X, TRACK_Y, 1, TRACK_H, '#8a7560');
     // Lane dividers between stalls
     for (let i = 1; i < LANES; i++) {
       const y = TRACK_Y + i * LANE_H;
@@ -221,7 +225,7 @@
       rect(DOOR_X, doorTop, DOOR_W, 1, GATE_HI);
       // vertical bar accents
       for (let y = doorTop + 2; y < doorTop + doorH - 1; y += 3) {
-        px(DOOR_X + 1, y, '#1a1a1a');
+        px(DOOR_X + 1, y, '#4a4550');
       }
       // lane number (only while the door is tall enough)
       if (doorH >= 7) {
@@ -434,6 +438,28 @@
     }
   }
 
+  // Scaled text with optional bold stroke (draws each pixel as a scale x scale
+  // block; bold adds an extra 1-px thickening to the right of every lit pixel)
+  function drawTextScaled(text, x, y, col, scale, bold) {
+    const cellW = 4 * scale;          // 3 glyph cols + 1 gap, scaled
+    for (let i = 0; i < text.length; i++) {
+      const g = SMALL_FONT[text[i]];
+      if (!g) continue;
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 3; c++) {
+          if (g[r][c] !== 'X') continue;
+          const bx = x + i * cellW + c * scale;
+          const by = y + r * scale;
+          rect(bx, by, scale, scale, col);
+          if (bold) rect(bx + 1, by, scale, scale, col);
+        }
+      }
+    }
+  }
+  function measureScaled(text, scale) {
+    return text.length * 4 * scale - scale;
+  }
+
   // Prompt blinks while waiting for input
   function drawPrompt() {
     let text = null;
@@ -442,7 +468,7 @@
     if (!text) return;
     if (Math.floor(promptBlink / 400) % 2 === 1) return;
     const x0 = Math.floor((W - text.length * 4) / 2);
-    drawText(text, x0, H - 10, '#ffff40');
+    drawText(text, x0, H - 10, PROMPT_YELLOW);
   }
 
   // Winner banner shown once the first horse has crossed the finish line
@@ -454,17 +480,18 @@
     }
     if (winnerIdx < 0) return;
     const text = 'HORSE #' + (winnerIdx + 1) + ' WINS!';
-    const tw = text.length * 4 - 1;
-    const boxW = tw + 10;
-    const boxH = 15;
+    const scale = 2;
+    const tw = measureScaled(text, scale) + 1;  // +1 for bold stroke
+    const boxW = tw + 14;
+    const boxH = 5 * scale + 14;
     const bx = Math.floor((W - boxW) / 2);
-    const by = 30;
-    rect(bx, by, boxW, boxH, '#1a1a1a');
-    rect(bx + 1, by + 1, boxW - 2, 1, '#ffd040');
-    rect(bx + 1, by + boxH - 2, boxW - 2, 1, '#ffd040');
-    rect(bx, by, 1, boxH, '#ffd040');
-    rect(bx + boxW - 1, by, 1, boxH, '#ffd040');
-    drawText(text, bx + 5, by + 5, HORSES[winnerIdx].body);
+    const by = 26;
+    rect(bx, by, boxW, boxH, BANNER_BG);
+    rect(bx + 1, by + 1, boxW - 2, 1, BANNER_EDGE);
+    rect(bx + 1, by + boxH - 2, boxW - 2, 1, BANNER_EDGE);
+    rect(bx, by, 1, boxH, BANNER_EDGE);
+    rect(bx + boxW - 1, by, 1, boxH, BANNER_EDGE);
+    drawTextScaled(text, bx + 7, by + 7, HORSES[winnerIdx].body, scale, true);
   }
 
   function startRace() {
