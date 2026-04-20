@@ -81,6 +81,8 @@
   ];
   const JOCKEY_HELMET = '#14141a';
   const JOCKEY_SKIN = '#e8b090';
+  const HORSE_SHADOW = '#3a6228';     // dark green shadow on grass
+  const HORSE_SHADOW_SOFT = '#4a7c38'; // softer edge color
 
   // Per-horse runtime state (x position, speed, animation frame, finish info)
   const horseStates = HORSES.map(() => ({ x: 0, speed: 0, noisePhase: 0, frame: 0, frameT: 0, finished: false, finishTime: 0, place: 0 }));
@@ -319,6 +321,16 @@
     px(ox + 3, oy + 3, silk);
   }
 
+  // Soft 1-px shadow under the horse; stays on the ground even when the
+  // horse bobs upward during the gallop's flight frame.
+  function drawShadow(hx, y) {
+    const sy = y + 15;
+    for (let i = 1; i <= 15; i++) {
+      const edge = (i <= 2 || i >= 14);
+      px(hx + i, sy, edge ? HORSE_SHADOW_SOFT : HORSE_SHADOW);
+    }
+  }
+
   function drawHorses() {
     for (let i = 0; i < LANES; i++) {
       const y = TRACK_Y + i * LANE_H;
@@ -327,6 +339,7 @@
       const running = raceState === 'running' && !s.finished;
       const bob = (running && s.frame === 1) ? -1 : 0;
       const hx = Math.floor(s.x);
+      drawShadow(hx, y);
       drawHorse(hx, y + 3 + bob, h.body, h.mane, s.frame);
       // Jockey sits crouched on the horse's back, centered on the body
       drawJockey(hx + 6, y + 3 + bob, h.silk);
