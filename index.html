@@ -2,781 +2,629 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#1f1912">
-<title>Marigold</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbit Hunt</title>
 <style>
   html, body {
     margin: 0;
     padding: 0;
     height: 100%;
-    background: #1f1912;
-    color: #f4e8d8;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    overscroll-behavior: none;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  body {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
-    box-sizing: border-box;
-    min-height: 100vh;
-    min-height: 100dvh;
-    gap: 12px;
-  }
-  h1 {
-    margin: 0;
-    font-weight: 500;
-    letter-spacing: 0.3em;
-    font-size: 12px;
-    opacity: 0.6;
-    flex: 0 0 auto;
-  }
-  #stage {
-    width: 100%;
-    max-width: 480px;
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    min-height: 0;
-  }
-  #canvasWrap {
-    flex: 1 1 auto;
-    min-height: 0;
-    min-width: 0;
+    background: #ffffff;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
+    font-family: "SF Mono", "Menlo", "Courier New", monospace;
+  }
+  #stage {
+    position: relative;
+    width: 100vw;
+    max-width: 900px;
   }
   canvas {
-    background: #3d2d20;
-    border-radius: 12px;
     display: block;
+    width: 100%;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    background: #ffffff;
     touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
   }
-  .panel { display: flex; flex-direction: column; gap: 10px; flex: 0 0 auto; }
-  .row { display: flex; align-items: center; gap: 12px; font-size: 14px; }
-  .row label { width: 74px; opacity: 0.7; }
-  .bar {
-    flex: 1;
-    height: 16px;
-    background: #120d08;
-    border-radius: 8px;
-    overflow: hidden;
-    position: relative;
-  }
-  .fill {
-    height: 100%;
-    width: 0;
-    background: linear-gradient(90deg, #56b1ff, #2d7fd9);
-    transition: width 0.3s, background 0.3s;
-  }
-  .fill.low { background: linear-gradient(90deg, #d67b2c, #a14820); }
-  .fill.high { background: linear-gradient(90deg, #7660d0, #4a3890); }
-  .fill.growth { background: linear-gradient(90deg, #7fd04a, #2d8a22); }
-  .val {
-    width: 58px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    opacity: 0.85;
-  }
-  button {
-    background: #2f78d6;
-    color: white;
-    border: 0;
-    padding: 18px 20px;
-    border-radius: 12px;
-    font-size: 17px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    cursor: pointer;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    transition: transform 0.08s, background 0.15s;
-  }
-  button:hover { background: #3d87e6; }
-  button:active { background: #2363b8; transform: scale(0.97); }
-
-  .seg {
+  #hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 16px;
     display: flex;
-    gap: 6px;
-    flex: 1;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+    color: #2b1810;
+    font-weight: 700;
+    font-size: clamp(14px, 2.4vw, 22px);
+    letter-spacing: 0.5px;
+    -webkit-font-smoothing: antialiased;
   }
-  .seg button {
-    flex: 1;
-    padding: 10px 6px;
-    font-size: 12px;
-    font-weight: 600;
-    background: #2a2520;
-    color: #8a7e6a;
-    border-radius: 8px;
-    letter-spacing: 0.05em;
+  #hudRight { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+  #best { font-size: 0.7em; opacity: 0.7; font-weight: 600; }
+  #title { }
+  #timer { font-variant-numeric: tabular-nums; transition: color 0.2s; }
+  #timer.urgent { color: #d62828; animation: pulse 0.6s ease-in-out infinite; }
+  #score { font-variant-numeric: tabular-nums; }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.15); }
   }
-  .seg button:hover { background: #342d26; }
-  .seg button.active,
-  .seg button.active:hover { background: #c89850; color: #1a1108; }
-
-  button.harvest { background: #3a8a2c; }
-  button.harvest:hover { background: #4a9a3c; }
-  button.harvest:active { background: #2a7a1c; }
-  button[hidden] { display: none; }
+  .popup {
+    position: absolute;
+    pointer-events: none;
+    font-weight: 800;
+    font-size: clamp(14px, 2.6vw, 22px);
+    color: #d62828;
+    transform: translate(-50%, -100%);
+    animation: floatUp 0.9s ease-out forwards;
+    text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;
+    -webkit-font-smoothing: antialiased;
+  }
+  .popup.gold { color: #c89010; }
+  @keyframes floatUp {
+    0% { opacity: 1; transform: translate(-50%, -100%); }
+    100% { opacity: 0; transform: translate(-50%, -220%); }
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(255,255,255,0.88);
+    color: #2b1810;
+    pointer-events: auto;
+    cursor: pointer;
+    text-align: center;
+    padding: 0 20px;
+  }
+  #overlay.show { display: flex; }
+  #overlay .big { font-size: clamp(22px, 5vw, 42px); font-weight: 800; }
+  #overlay .sub { font-size: clamp(14px, 2.4vw, 20px); }
+  #overlay .stats { font-size: clamp(12px, 2vw, 16px); opacity: 0.8; }
+  #overlay .hint { margin-top: 6px; font-size: clamp(12px, 2vw, 16px); opacity: 0.7; }
 </style>
 </head>
 <body>
-  <h1>MARIGOLD</h1>
-  <div id="stage">
-    <div id="canvasWrap"><canvas id="c"></canvas></div>
-    <div class="panel">
-      <div class="row">
-        <label>Moisture</label>
-        <div class="bar"><div id="moistFill" class="fill"></div></div>
-        <div id="moistVal" class="val">0%</div>
-      </div>
-      <div class="row">
-        <label>Growth</label>
-        <div class="bar"><div id="growthFill" class="fill growth"></div></div>
-        <div id="stageVal" class="val">Seed</div>
-      </div>
-      <div class="row">
-        <label>Light</label>
-        <div class="seg" id="lightSeg">
-          <button type="button" data-light="shade">Shade</button>
-          <button type="button" data-light="window">Window</button>
-          <button type="button" data-light="direct">Direct</button>
-        </div>
-      </div>
-      <button id="water">Water +30%</button>
-      <button id="harvest" class="harvest" hidden>Harvest</button>
-    </div>
+<div id="stage">
+  <canvas id="c"></canvas>
+  <div id="hud">
+    <span id="title">RABBIT HUNT</span>
+    <span id="timer">1:00</span>
+    <span id="hudRight">
+      <span id="score">Score: 0</span>
+      <span id="best">Best: 0</span>
+    </span>
   </div>
-<script src="flowers.js"></script>
-<script src="plant.js"></script>
+  <div id="overlay">
+    <div class="big" id="overTitle">Time's up!</div>
+    <div class="sub" id="overScore">Score: 0</div>
+    <div class="stats" id="overStats">Caught: 0 · Missed: 0 · Best streak: 0</div>
+    <div class="hint">Tap to play again</div>
+  </div>
+</div>
 <script>
 (() => {
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
-  const moistFill = document.getElementById('moistFill');
-  const moistVal = document.getElementById('moistVal');
-  const growthFill = document.getElementById('growthFill');
-  const stageVal = document.getElementById('stageVal');
-  const waterBtn = document.getElementById('water');
-  const harvestBtn = document.getElementById('harvest');
-  const lightSeg = document.getElementById('lightSeg');
+  const titleEl = document.getElementById('title');
+  const timerEl = document.getElementById('timer');
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const stage = document.getElementById('stage');
+  const overlay = document.getElementById('overlay');
+  const overScoreEl = document.getElementById('overScore');
+  const overStatsEl = document.getElementById('overStats');
 
-  // Logical drawing space stays 400×400 so all draw code is untouched.
-  // We scale the backing store to devicePixelRatio for crisp rendering.
-  const W = 400, H = 400;
-  const CX = W / 2, CY = H / 2;
+  const W = 240, H = 200;
+  canvas.width = W;
+  canvas.height = H;
+  ctx.imageSmoothingEnabled = false;
 
-  function resizeCanvas() {
-    const wrap = canvas.parentElement;
-    const wrapRect = wrap.getBoundingClientRect();
-    const size = Math.max(1, Math.floor(Math.min(wrapRect.width, wrapRect.height)));
-    canvas.style.width = size + 'px';
-    canvas.style.height = size + 'px';
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const backing = Math.round(size * dpr);
-    if (canvas.width !== backing || canvas.height !== backing) {
-      canvas.width = backing;
-      canvas.height = backing;
-    }
-    const scale = backing / W;
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  }
-  resizeCanvas();
-  window.addEventListener('resize', resizeCanvas);
-  window.addEventListener('orientationchange', resizeCanvas);
-  if (window.ResizeObserver) {
-    new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
-  }
-
-  const SPECIES_M = SPECIES.marigold;
-
-  // Migrate out the pre-schema save key.
-  try { localStorage.removeItem('marigoldState.v1'); } catch (e) {}
-
-  let plant = window.load();
-  if (!plant || typeof plant.stageIndex !== 'number') {
-    plant = window.newPlant('marigold');
-    window.save(plant);
-  }
-  window.catchUp(plant, SPECIES_M);
-
-  function stageProgress() {
-    const stage = SPECIES_M.stages[plant.stageIndex];
-    if (!stage || !isFinite(stage.durationMs) || stage.durationMs <= 0) return 0;
-    return Math.min(1, plant.timeInStageMs / stage.durationMs);
-  }
-
-  function stageLabel(id) {
-    return id.charAt(0).toUpperCase() + id.slice(1).replace(/_/g, ' ');
-  }
-
-  // ---- Drawing (isometric-ish 2.5D) ----
-  //
-  // Scene layout in logical 400×400 space:
-  //   floor horizon:  y = 255
-  //   pot top rim:    y = 235 (ellipse ry=26)
-  //   pot bottom:     y = 355 (ellipse ry=20)
-  //   soil surface:   y = 240 (inside rim)
-  //   plant base:     (CX, 240) growing up toward y ≈ 60 at full bloom
-  const POT = {
-    topY: 235, botY: 355,
-    topRx: 108, topRy: 26,
-    botRx: 82,  botRy: 20,
-    rimThick: 10,
+  const C = {
+    o: '#2b1810',
+    y: '#e0a84a',
+    c: '#fbecd0',
+    s: '#4a2c18',
+    b: '#000000',
+    p: '#e87a92',
+    r: '#e02020',
+    rL: '#ff5050',
   };
-  const SOIL_Y = POT.topY + 5;
-  const SOIL_RX = POT.topRx - POT.rimThick - 2;
-  const SOIL_RY = POT.topRy - POT.rimThick * 0.45 - 2;
-  const PLANT_BASE_Y = SOIL_Y;
 
-  function drawBackground() {
-    // Back wall
-    const wall = ctx.createLinearGradient(0, 0, 0, 255);
-    wall.addColorStop(0, '#1a120a');
-    wall.addColorStop(1, '#352518');
-    ctx.fillStyle = wall;
-    ctx.fillRect(0, 0, W, 255);
-
-    // Floor
-    const floor = ctx.createLinearGradient(0, 255, 0, H);
-    floor.addColorStop(0, '#4a3420');
-    floor.addColorStop(1, '#2a1c10');
-    ctx.fillStyle = floor;
-    ctx.fillRect(0, 255, W, H - 255);
-
-    // Soft horizon glow
-    const glow = ctx.createLinearGradient(0, 240, 0, 270);
-    glow.addColorStop(0, 'rgba(0,0,0,0)');
-    glow.addColorStop(0.5, 'rgba(0,0,0,0.35)');
-    glow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 240, W, 30);
-
-    // Floor "planks" — receding lines for perspective hint
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-    ctx.lineWidth = 1;
-    for (let i = 1; i < 5; i++) {
-      const y = 255 + i * i * 7;
-      if (y > H) break;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
-      ctx.stroke();
-    }
-    ctx.strokeStyle = 'rgba(255,220,180,0.04)';
-    for (let i = 0; i < 6; i++) {
-      const x = i * 80;
-      ctx.beginPath();
-      ctx.moveTo(x, 256);
-      ctx.lineTo(x + (x - CX) * 0.3, H);
-      ctx.stroke();
-    }
+  function px(x, y, col) {
+    if (!col) return;
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y, 1, 1);
   }
 
-  function drawPot() {
-    const { topY, botY, topRx, topRy, botRx, botRy, rimThick } = POT;
-
-    // Ground shadow on the floor
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.beginPath();
-    ctx.ellipse(CX + 8, botY + 4, botRx + 18, botRy + 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Pot body: a "barrel" shape between top and bottom ellipses
-    ctx.beginPath();
-    ctx.moveTo(CX - topRx, topY);
-    ctx.bezierCurveTo(
-      CX - topRx - 3, topY + (botY - topY) * 0.4,
-      CX - botRx - 3, botY - (botY - topY) * 0.35,
-      CX - botRx, botY
-    );
-    // front (lower) arc of bottom ellipse, left → right
-    ctx.ellipse(CX, botY, botRx, botRy, 0, Math.PI, 0, true);
-    ctx.bezierCurveTo(
-      CX + botRx + 3, botY - (botY - topY) * 0.35,
-      CX + topRx + 3, topY + (botY - topY) * 0.4,
-      CX + topRx, topY
-    );
-    // front (lower) arc of top ellipse: close the top
-    ctx.ellipse(CX, topY, topRx, topRy, 0, 0, Math.PI, false);
-    ctx.closePath();
-
-    // Warm neutral stone — deliberately low-saturation so the flower pops.
-    const bodyGrad = ctx.createLinearGradient(CX - topRx, 0, CX + topRx, 0);
-    bodyGrad.addColorStop(0, '#2a2722');
-    bodyGrad.addColorStop(0.18, '#504a42');
-    bodyGrad.addColorStop(0.5, '#8c8578');
-    bodyGrad.addColorStop(0.82, '#504a42');
-    bodyGrad.addColorStop(1, '#2a2722');
-    ctx.fillStyle = bodyGrad;
-    ctx.fill();
-
-    // Soft vertical sheen
-    const sheen = ctx.createLinearGradient(CX - topRx, 0, CX + topRx, 0);
-    sheen.addColorStop(0, 'rgba(255,245,225,0)');
-    sheen.addColorStop(0.38, 'rgba(255,245,225,0.12)');
-    sheen.addColorStop(0.5, 'rgba(255,245,225,0)');
-    sheen.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = sheen;
-    ctx.fill();
-
-    // Painted message on the pot body
-    drawPotMessage(currentMessage());
-
-    // Top rim: full ellipse (outer)
-    ctx.fillStyle = '#3a352e';
-    ctx.beginPath();
-    ctx.ellipse(CX, topY, topRx, topRy, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Rim highlight (upper arc — lit from upper-left)
-    ctx.strokeStyle = 'rgba(255,245,225,0.35)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.ellipse(CX, topY, topRx, topRy, 0, Math.PI + 0.15, Math.PI * 2 - 0.15);
-    ctx.stroke();
-
-    // Inner opening (darker, lower, smaller — shows rim thickness)
-    const innerRx = topRx - rimThick;
-    const innerRy = topRy - rimThick * 0.45;
-    const innerY = topY + 3;
-    ctx.fillStyle = '#12100d';
-    ctx.beginPath();
-    ctx.ellipse(CX, innerY, innerRx, innerRy, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Soil ellipse inside
-    const soilGrad = ctx.createRadialGradient(
-      CX - SOIL_RX * 0.4, SOIL_Y - SOIL_RY * 0.5, 6,
-      CX, SOIL_Y, SOIL_RX
-    );
-    soilGrad.addColorStop(0, '#5e3c22');
-    soilGrad.addColorStop(1, '#20120a');
-    ctx.fillStyle = soilGrad;
-    ctx.beginPath();
-    ctx.ellipse(CX, SOIL_Y, SOIL_RX, SOIL_RY, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Soil speckles, clipped to the ellipse
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(CX, SOIL_Y, SOIL_RX, SOIL_RY, 0, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    for (let i = 0; i < 90; i++) {
-      const a = i * 2.399;
-      const r = Math.sqrt(i / 90);
-      ctx.fillRect(CX + Math.cos(a) * r * SOIL_RX, SOIL_Y + Math.sin(a) * r * SOIL_RY, 2, 2);
+  // ---- Audio (lazy init on first user gesture) ----
+  let audioCtx = null;
+  function initAudio() {
+    if (!audioCtx) {
+      try {
+        const Ctor = window.AudioContext || window.webkitAudioContext;
+        if (Ctor) audioCtx = new Ctor();
+      } catch (e) { /* ignore */ }
     }
-    ctx.fillStyle = 'rgba(220,170,110,0.22)';
-    for (let i = 0; i < 55; i++) {
-      const a = i * 1.77 + 0.5;
-      const r = Math.sqrt(i / 55);
-      ctx.fillRect(CX + Math.cos(a) * r * SOIL_RX, SOIL_Y + Math.sin(a) * r * SOIL_RY, 2, 2);
-    }
-    ctx.restore();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function tone(freq, dur, type, vol, slideTo) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(vol || 0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+  function playPop() { tone(880, 0.14, 'triangle', 0.18, 220); }
+  function playSparkle() {
+    [880, 1320, 1760].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'sine', 0.16), i * 60));
+  }
+  function playTick() { tone(1400, 0.04, 'square', 0.07); }
 
-    if (plant.moisture > SPECIES_M.care.moisture.stress_high) {
-      ctx.fillStyle = 'rgba(80,110,180,0.22)';
-      ctx.beginPath();
-      ctx.ellipse(CX, SOIL_Y, SOIL_RX, SOIL_RY, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  // ---- Floating score popups (HTML overlays for sharp text) ----
+  function showPopup(canvasX, canvasY, text, gold) {
+    const rect = canvas.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const sx = (canvasX / W) * rect.width + (rect.left - stageRect.left);
+    const sy = (canvasY / H) * rect.height + (rect.top - stageRect.top);
+    const div = document.createElement('div');
+    div.className = 'popup' + (gold ? ' gold' : '');
+    div.textContent = text;
+    div.style.left = sx + 'px';
+    div.style.top = sy + 'px';
+    stage.appendChild(div);
+    setTimeout(() => div.remove(), 900);
   }
 
-  function drawPotMessage(msg) {
-    if (!msg) return;
-    const midY = (POT.topY + POT.botY) / 2 + 4;
-    const maxW = 160;
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const isLong = msg.length > 16;
-    ctx.font = (isLong ? '500 10.5px' : '700 13px') +
-      ' -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    const lines = wrapText(msg, maxW);
-    const lineH = isLong ? 13 : 16;
-    const startY = midY - ((lines.length - 1) * lineH) / 2;
-    for (let i = 0; i < lines.length; i++) {
-      const y = startY + i * lineH;
-      ctx.fillStyle = 'rgba(255,248,230,0.10)';
-      ctx.fillText(lines[i], CX, y + 1);
-      ctx.fillStyle = 'rgba(20,18,14,0.58)';
-      ctx.fillText(lines[i], CX, y);
-    }
-    ctx.restore();
-  }
+  function drawLeopard(ox, oy, frame, standing) {
+    px(ox+20, oy+4, C.o);
+    px(ox+21, oy+3, C.o);
+    px(ox+22, oy+2, C.o);
+    px(ox+22, oy+1, C.o);
+    px(ox+21, oy+1, C.y);
+    px(ox+21, oy+2, C.y);
 
-  function wrapText(text, maxW) {
-    const words = text.split(' ');
-    const lines = [];
-    let current = '';
-    for (const w of words) {
-      const test = current ? current + ' ' + w : w;
-      if (ctx.measureText(test).width <= maxW) {
-        current = test;
-      } else {
-        if (current) lines.push(current);
-        current = w;
+    for (let i = 5; i <= 19; i++) px(ox+i, oy+2, C.o);
+    for (let i = 5; i <= 19; i++) px(ox+i, oy+8, C.o);
+    px(ox+20, oy+3, C.o);
+    px(ox+20, oy+5, C.o);
+    px(ox+20, oy+6, C.o);
+    px(ox+20, oy+7, C.o);
+    px(ox+20, oy+8, C.o);
+
+    for (let j = 3; j <= 6; j++) {
+      for (let i = 5; i <= 19; i++) px(ox+i, oy+j, C.y);
+    }
+    for (let i = 5; i <= 19; i++) px(ox+i, oy+7, C.c);
+
+    px(ox+7,  oy+3, C.s);
+    px(ox+10, oy+4, C.s); px(ox+11, oy+4, C.s);
+    px(ox+14, oy+3, C.s);
+    px(ox+16, oy+5, C.s); px(ox+17, oy+5, C.s);
+    px(ox+13, oy+6, C.s);
+    px(ox+9,  oy+6, C.s);
+
+    for (let j = 3; j <= 6; j++) {
+      for (let i = 1; i <= 4; i++) px(ox+i, oy+j, C.y);
+    }
+    px(ox, oy+4, C.o);
+    px(ox, oy+5, C.o);
+    px(ox, oy+6, C.o);
+    px(ox+1, oy+3, C.o);
+    px(ox+2, oy+3, C.o);
+    px(ox+3, oy+3, C.o);
+    px(ox+4, oy+3, C.o);
+    px(ox+1, oy+7, C.o);
+    px(ox+2, oy+7, C.o);
+    px(ox+3, oy+7, C.o);
+    px(ox+4, oy+7, C.o);
+
+    px(ox+1, oy+2, C.o);
+    px(ox+4, oy+2, C.o);
+
+    px(ox+3, oy+5, C.b);
+    px(ox, oy+4, C.p);
+    px(ox+1, oy+6, C.s);
+
+    const legX = [7, 10, 16, 19];
+    const lenA = [3, 2, 2, 3];
+    const lenB = [2, 3, 3, 2];
+    const lenStand = [3, 3, 3, 3];
+    const lengths = standing ? lenStand : (frame === 0 ? lenA : lenB);
+
+    for (let k = 0; k < 4; k++) {
+      const lx = ox + legX[k];
+      const len = lengths[k];
+      for (let j = 0; j < len; j++) {
+        px(lx, oy + 9 + j, C.o);
       }
-    }
-    if (current) lines.push(current);
-    return lines;
-  }
-
-  // Side-view leaf with tonal gradient and a soft highlight.
-  // stemX/stemY = attachment point on stem; side = -1 (left) or +1 (right)
-  function drawLeaf(stemX, stemY, side, length, droop) {
-    const width = length * 0.42;
-    ctx.save();
-    ctx.translate(stemX, stemY);
-    ctx.rotate(side * (0.25 + droop));
-
-    // Shadow underside — a hair wider, shifted down
-    ctx.fillStyle = '#11220d';
-    ctx.beginPath();
-    ctx.ellipse(side * length * 0.55, 1.8, length * 1.02, width * 1.04, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Main leaf body with a gradient from base (deep forest) to tip (young chartreuse)
-    const body = ctx.createLinearGradient(0, 0, side * length * 1.35, 0);
-    body.addColorStop(0,    '#1d3a14');
-    body.addColorStop(0.35, '#356820');
-    body.addColorStop(0.75, '#68b236');
-    body.addColorStop(1,    '#b4e05a');
-    ctx.fillStyle = body;
-    ctx.beginPath();
-    ctx.ellipse(side * length * 0.52, 0, length * 0.96, width * 0.9, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Top-edge gloss: narrow bright crescent near the upper rim
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(side * length * 0.52, 0, length * 0.96, width * 0.9, 0, 0, Math.PI * 2);
-    ctx.clip();
-    const gloss = ctx.createLinearGradient(0, -width, 0, 0);
-    gloss.addColorStop(0, 'rgba(230,255,190,0)');
-    gloss.addColorStop(0.7, 'rgba(210,255,170,0.35)');
-    gloss.addColorStop(1, 'rgba(210,255,170,0)');
-    ctx.fillStyle = gloss;
-    ctx.fillRect(-length * 0.2, -width, length * 1.6, width * 0.9);
-    ctx.restore();
-
-    // Midrib vein
-    ctx.strokeStyle = '#1a3210';
-    ctx.lineWidth = 0.9;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(side * length * 1.35, -0.5);
-    ctx.stroke();
-
-    // Lateral veins
-    ctx.strokeStyle = 'rgba(26,50,16,0.55)';
-    ctx.lineWidth = 0.5;
-    for (let v = 0; v < 3; v++) {
-      const t = 0.3 + v * 0.22;
-      const vx = side * length * 1.35 * t;
-      const up = v % 2 === 0;
-      ctx.beginPath();
-      ctx.moveTo(vx, -0.4);
-      ctx.lineTo(vx + side * length * 0.12, (up ? -1 : 1) * width * 0.55);
-      ctx.stroke();
-    }
-
-    ctx.restore();
-  }
-
-  // Ring of petals with a base→tip gradient per petal for depth.
-  function drawPetalRing(r, count, rr, pl, pw, baseCol, tipCol, angleOffset) {
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + angleOffset;
-      ctx.save();
-      ctx.translate(Math.cos(a) * r * rr, Math.sin(a) * r * rr);
-      ctx.rotate(a);
-      const g = ctx.createLinearGradient(-r * pl, 0, r * pl, 0);
-      g.addColorStop(0, baseCol);
-      g.addColorStop(0.55, tipCol);
-      g.addColorStop(1, tipCol);
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, r * pl, r * pw, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // subtle tip highlight
-      ctx.fillStyle = 'rgba(255,245,210,0.22)';
-      ctx.beginPath();
-      ctx.ellipse(r * pl * 0.55, 0, r * pl * 0.3, r * pw * 0.45, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      px(lx - 1, oy + 9 + len - 1, C.o);
+      px(lx + 1, oy + 9 + len - 1, C.o);
     }
   }
 
-  // Marigold head at (cx, cy), radius r. Compressed on Y so it reads as a disc
-  // tilted toward the camera.
-  function drawFlowerHead(cx, cy, r, full) {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(1, 0.78);
+  const RW = 10, RH = 9;
 
-    if (full) {
-      // Deepest outer ring: crimson base, flame tip
-      drawPetalRing(r, 14, 0.60, 0.50, 0.22, '#6a1a08', '#e86018', 0);
-      drawPetalRing(r, 14, 0.48, 0.46, 0.20, '#8c2a0a', '#f27a1c', Math.PI / 14);
-      drawPetalRing(r, 12, 0.36, 0.40, 0.18, '#b04418', '#f89420', 0);
-      drawPetalRing(r, 10, 0.24, 0.30, 0.16, '#cc6418', '#ffbc3c', Math.PI / 10);
-      drawPetalRing(r,  8, 0.12, 0.20, 0.12, '#d88820', '#ffe078', 0);
-    } else {
-      drawPetalRing(r, 8, 0.58, 0.54, 0.28, '#7a220a', '#e07018', 0);
-      drawPetalRing(r, 8, 0.40, 0.46, 0.24, '#a8420f', '#f39025', Math.PI / 8);
-      drawPetalRing(r, 8, 0.22, 0.34, 0.20, '#c45e18', '#fbb842', 0);
-    }
-
-    // Core with a warm radial gradient
-    const coreR = r * 0.16;
-    const core = ctx.createRadialGradient(-coreR * 0.3, -coreR * 0.4, 0, 0, 0, coreR);
-    core.addColorStop(0, full ? '#ffe088' : '#ffc878');
-    core.addColorStop(0.6, full ? '#f08420' : '#d46418');
-    core.addColorStop(1, full ? '#7a2608' : '#5e1a04');
-    ctx.fillStyle = core;
-    ctx.beginPath();
-    ctx.arc(0, 0, coreR, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (full) {
-      // Pollen dots on the core
-      ctx.fillStyle = '#3a1a08';
-      for (let i = 0; i < 7; i++) {
-        const a = i * 1.7;
-        const rr = coreR * 0.6 * Math.sqrt(i / 7);
-        ctx.fillRect(Math.cos(a) * rr, Math.sin(a) * rr, 1.2, 1.2);
-      }
-      // Gloss sparkle
-      ctx.fillStyle = 'rgba(255,250,220,0.9)';
-      ctx.beginPath();
-      ctx.arc(-coreR * 0.25, -coreR * 0.35, coreR * 0.18, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.restore();
-  }
-
-  function drawPlant() {
-    const sprite = SPECIES.marigold.stages[plant.stageIndex].sprite;
-    if (sprite === 'seed' || sprite === 'soil_crack') return;
-    const stage = { sprout: 1, leafy: 2, bud: 3, flower: 5, faded: 5 }[sprite];
-    const p = stageProgress();
-    const t = performance.now();
-    const sway = Math.sin(t / 1400);
-    const baseX = CX;
-    const baseY = PLANT_BASE_Y;
-
-    // Stage 1: tiny cotyledon sprout, barely above soil
-    if (stage === 1) {
-      const s = 0.5 + p * 0.9;
-      for (let side of [-1, 1]) {
-        ctx.fillStyle = '#2a4a18';
-        ctx.beginPath();
-        ctx.ellipse(baseX + side * 4 * s, baseY - 1, 7 * s, 3.5 * s, side * 0.25, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#6bbf3c';
-        ctx.beginPath();
-        ctx.ellipse(baseX + side * 4 * s, baseY - 2, 6 * s, 3 * s, side * 0.25, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      return;
-    }
-
-    // Stage 2..5: growing stem heights
-    const heights = { 2: 30, 3: 70, 4: 115, 5: 150 };
-    const prev    = { 2:  4, 3: 30, 4:  70, 5: 115 };
-    const stemH = prev[stage] + (heights[stage] - prev[stage]) * p;
-    const topX = baseX + sway * 3;
-    const topY = baseY - stemH;
-
-    // Stem path (slight S-curve via bezier, sway at the top)
-    ctx.strokeStyle = '#3a6a20';
-    ctx.lineWidth = stage >= 4 ? 3.5 : 2.8;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(baseX, baseY);
-    ctx.bezierCurveTo(
-      baseX + sway * 0.8, baseY - stemH * 0.45,
-      baseX + sway * 2.2, baseY - stemH * 0.75,
-      topX, topY
-    );
-    ctx.stroke();
-
-    // Leaves along the stem, alternating sides
-    const pairs = Math.min(stage - 1, 4);        // 1..4 pairs as stage grows
-    for (let i = 0; i < pairs; i++) {
-      // Distribute from 25% up to 80% of stem
-      const tt = 0.25 + (i / Math.max(1, pairs - 1)) * 0.55;
-      const ly = baseY - stemH * tt;
-      const lx = baseX + sway * tt * 2;
-      const side = i % 2 === 0 ? -1 : 1;
-      const size = (10 + stage * 2.5) * (1 - tt * 0.35);
-      const droop = 0.05 + tt * 0.1;
-      drawLeaf(lx, ly, side, size, droop);
-    }
-
-    // Top feature: rosette, bud, opening flower, or full bloom
-    if (stage === 2) {
-      // Small green shoot tip
-      ctx.fillStyle = '#5a9a30';
-      ctx.beginPath();
-      ctx.ellipse(topX, topY, 4 + p * 2.5, 3 + p * 1.8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#8fc850';
-      ctx.beginPath();
-      ctx.ellipse(topX - 1, topY - 1, 2.5 + p * 1.5, 2 + p * 1, 0, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (stage === 3) {
-      // Green bud with orange tint pushing through
-      const r = 8 + p * 6;
-      ctx.fillStyle = '#5a8a28';
-      ctx.beginPath();
-      ctx.ellipse(topX, topY, r, r * 0.95, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // Sepals
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2 + 0.3;
-        ctx.save();
-        ctx.translate(topX + Math.cos(a) * r * 0.85, topY + Math.sin(a) * r * 0.75);
-        ctx.rotate(a);
-        ctx.fillStyle = '#3a6a20';
-        ctx.beginPath();
-        ctx.ellipse(0, 0, r * 0.5, r * 0.22, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.fillStyle = `rgba(232,140,40,${0.2 + p * 0.7})`;
-      ctx.beginPath();
-      ctx.ellipse(topX, topY, r * 0.65, r * 0.55, 0, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (stage === 4) {
-      drawFlowerHead(topX, topY, 18 + p * 10, false);
-    } else if (stage === 5) {
-      drawFlowerHead(topX, topY, 34, true);
+  function drawRabbit(ox, oy, type) {
+    const body = type === 'gold' ? '#f2c430' : C.c;
+    px(ox+2, oy,   C.o); px(ox+3, oy,   C.o);
+    px(ox+6, oy,   C.o); px(ox+7, oy,   C.o);
+    px(ox+2, oy+1, C.o); px(ox+3, oy+1, body);
+    px(ox+6, oy+1, body); px(ox+7, oy+1, C.o);
+    px(ox+2, oy+2, C.o); px(ox+3, oy+2, body);
+    px(ox+6, oy+2, body); px(ox+7, oy+2, C.o);
+    px(ox+1, oy+3, C.o); px(ox+8, oy+3, C.o);
+    for (let i = 2; i <= 7; i++) px(ox+i, oy+3, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+4, body);
+    px(ox+3, oy+4, C.b);
+    px(ox+6, oy+4, C.b);
+    px(ox,   oy+5, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+5, body);
+    px(ox+9, oy+5, C.o);
+    px(ox+4, oy+5, C.p);
+    px(ox+5, oy+5, C.p);
+    px(ox,   oy+6, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+6, body);
+    px(ox+9, oy+6, C.o);
+    px(ox+1, oy+7, C.o); px(ox+2, oy+7, C.o);
+    for (let i = 3; i <= 6; i++) px(ox+i, oy+7, body);
+    px(ox+7, oy+7, C.o); px(ox+8, oy+7, C.o);
+    px(ox+1, oy+8, C.o); px(ox+2, oy+8, C.o);
+    px(ox+7, oy+8, C.o); px(ox+8, oy+8, C.o);
+    if (type === 'gold') {
+      // sparkle
+      px(ox+5, oy+6, '#ffffff');
+      px(ox+2, oy+5, '#fff0a0');
     }
   }
 
-  function render() {
-    drawBackground();
-    drawPot();
-    drawPlant();
-  }
-
-  function updateHud() {
-    const m = plant.moisture;
-    const c = SPECIES_M.care.moisture;
-    moistFill.style.width = Math.max(0, Math.min(100, m)) + '%';
-    moistFill.classList.toggle('low', m < c.stress_low);
-    moistFill.classList.toggle('high', m > c.stress_high);
-    moistVal.textContent = m.toFixed(1) + '%';
-
-    const stage = SPECIES_M.stages[plant.stageIndex];
-    growthFill.style.width = (stageProgress() * 100) + '%';
-    stageVal.textContent = stageLabel(stage.id);
-
-    for (const btn of lightSeg.querySelectorAll('button')) {
-      btn.classList.toggle('active', btn.dataset.light === plant.light);
+  function drawBurst(cx, cy, t) {
+    // t is 0..1 progress; bright red burst growing outward
+    const r = Math.floor(2 + t * 7);
+    const col = t < 0.5 ? C.rL : C.r;
+    for (let i = -r; i <= r; i++) {
+      px(cx + i, cy, col);
+      px(cx, cy + i, col);
     }
-
-    harvestBtn.hidden =
-      plant.isDead || plant.harvested || stage.id !== 'blooming';
-  }
-
-  // Rotation period for cycling through unlocked journal entries on the pot.
-  const JOURNAL_ROTATE_MS = 7000;
-
-  function currentMessage() {
-    if (plant.isDead)    return 'WITHERED';
-    if (plant.harvested) return 'HARVESTED';
-    const c = SPECIES_M.care.moisture;
-    const m = plant.moisture;
-    const stageId = SPECIES_M.stages[plant.stageIndex].id;
-    if (m <= c.lethal_low)  return 'PARCHED';
-    if (m >= c.lethal_high) return 'DROWNING';
-    if (m < c.stress_low)   return 'NEEDS WATER';
-    if (m > c.stress_high)  return 'TOO WET';
-    if (SPECIES_M.care.light.isStressed(plant.light)) return 'NEEDS LIGHT';
-
-    // Otherwise surface any unlocked journal entries, rotating slowly.
-    const unlocked = SPECIES_M.journal
-      .filter(e => plant.journalFlags[e.trigger])
-      .sort((a, b) => plant.journalFlags[a.trigger] - plant.journalFlags[b.trigger]);
-    if (unlocked.length > 0) {
-      const idx = Math.floor(Date.now() / JOURNAL_ROTATE_MS) % unlocked.length;
-      return unlocked[idx].text;
+    const d = Math.max(1, Math.floor(r * 0.7));
+    for (let i = -d; i <= d; i++) {
+      px(cx + i, cy + i, col);
+      px(cx + i, cy - i, col);
     }
-
-    if (stageId === 'blooming') return 'IN BLOOM';
-    if (stageId === 'faded')    return 'FADED';
-    return stageLabel(stageId).toUpperCase();
+    // center highlight
+    px(cx, cy, '#ffffff');
+    px(cx+1, cy, '#ffffff');
+    px(cx-1, cy, '#ffffff');
+    px(cx, cy+1, '#ffffff');
+    px(cx, cy-1, '#ffffff');
   }
 
-  waterBtn.addEventListener('click', () => {
-    window.water(plant);
-    window.save(plant);
-    updateHud();
-  });
+  let groundY = Math.floor(H * 0.6);
+  const groundMin = 13;
+  const groundMax = H - 1;
 
-  harvestBtn.addEventListener('click', () => {
-    window.harvest(plant, SPECIES_M);
-    window.save(plant);
-    updateHud();
-  });
+  const rabbits = [];
+  const MAX_RABBITS = 3;
+  const RABBIT_LIFE = 5000;
+  const CAUGHT_DURATION = 500;
+  const GAME_DURATION = 60000;
 
-  for (const btn of lightSeg.querySelectorAll('button')) {
-    btn.addEventListener('click', () => {
-      window.setLight(plant, btn.dataset.light);
-      window.save(plant);
-      updateHud();
+  let score = 0;
+  let spawnTimer = 0;
+  let nextSpawn = 500 + Math.random() * 900;
+  let gameState = 'playing';
+  let timeLeft = GAME_DURATION;
+  let lastTickSecond = -1;
+
+  // Stats / combo
+  let caughtCount = 0;
+  let missedCount = 0;
+  let combo = 0;
+  let lastCatchTime = -Infinity;
+  let bestStreak = 0;
+  const COMBO_WINDOW = 2000;
+
+  // High score
+  let bestScore = 0;
+  try { bestScore = parseInt(localStorage.getItem('rabbitHuntBest') || '0', 10) || 0; } catch (e) {}
+
+  const goldSchedule = [
+    { at: 30000, spawned: false },
+    { at: 55000, spawned: false },
+  ];
+
+  function spawnRabbit(type) {
+    const x = 4 + Math.floor(Math.random() * (W - RW - 8));
+    const y = 4 + Math.floor(Math.random() * (H - RH - 8));
+    const isGold = type === 'gold';
+    rabbits.push({
+      x, y,
+      born: performance.now(),
+      type: isGold ? 'gold' : 'normal',
+      life: isGold ? 3000 : RABBIT_LIFE,
+      points: isGold ? 5 : 1,
     });
   }
 
-  // Sim tick every second — Date-based delta so throttled intervals self-correct.
-  let lastSimTick = Date.now();
-  let lastSave = Date.now();
-  setInterval(() => {
-    const now = Date.now();
-    window.tick(plant, SPECIES_M, now - lastSimTick);
-    lastSimTick = now;
-    plant.lastUpdated = now;
-    if (now - lastSave > 5000) {
-      window.save(plant);
-      lastSave = now;
+  function updateRabbits(dt, now) {
+    for (let i = rabbits.length - 1; i >= 0; i--) {
+      const r = rabbits[i];
+      if (r.caught != null) {
+        if (now - r.caught >= CAUGHT_DURATION) rabbits.splice(i, 1);
+      } else if (now - r.born >= (r.life || RABBIT_LIFE)) {
+        rabbits.splice(i, 1);
+        if (gameState === 'playing') {
+          missedCount++;
+          combo = 0;
+        }
+      }
     }
-    updateHud();
-  }, 1000);
+    // Face-only hitbox: snout/head of the leopard (~5x5)
+    const fx = pos + 0;
+    const fy = groundY - 12 + 3;
+    const fw = 5;
+    const fh = 5;
+    for (const r of rabbits) {
+      if (r.caught != null) continue;
+      if (r.x + RW > fx && r.x < fx + fw && r.y + RH > fy && r.y < fy + fh) {
+        r.caught = now;
+        // Combo logic (resets if too long since last catch)
+        if (now - lastCatchTime <= COMBO_WINDOW) combo++;
+        else combo = 1;
+        lastCatchTime = now;
+        if (combo > bestStreak) bestStreak = combo;
+        const base = r.points || 1;
+        const bonus = combo > 1 ? (combo - 1) : 0;
+        const total = base + bonus;
+        score += total;
+        caughtCount++;
+        const cx = r.x + Math.floor(RW / 2);
+        const cy = r.y;
+        if (r.type === 'gold') {
+          showPopup(cx, cy, '+' + total + (bonus > 0 ? ' x' + combo + '!' : ''), true);
+          playSparkle();
+        } else {
+          showPopup(cx, cy, '+' + total + (bonus > 0 ? ' x' + combo + '!' : ''), false);
+          playPop();
+        }
+      }
+    }
+    if (gameState === 'playing') {
+      const elapsed = GAME_DURATION - timeLeft;
+      for (const g of goldSchedule) {
+        if (!g.spawned && elapsed >= g.at) {
+          g.spawned = true;
+          spawnRabbit('gold');
+        }
+      }
+      spawnTimer += dt;
+      const liveNormal = rabbits.filter(r => r.caught == null && r.type !== 'gold').length;
+      if (liveNormal < MAX_RABBITS && spawnTimer >= nextSpawn) {
+        spawnTimer = 0;
+        const urgent = timeLeft <= 10000;
+        const minMs = urgent ? 250 : 500;
+        const maxMs = urgent ? 700 : 1700;
+        nextSpawn = minMs + Math.random() * (maxMs - minMs);
+        spawnRabbit();
+      }
+      // Tick sound in last 5 seconds
+      const sec = Math.ceil(timeLeft / 1000);
+      if (sec !== lastTickSecond) {
+        lastTickSecond = sec;
+        if (sec >= 1 && sec <= 5) playTick();
+      }
+    }
+  }
 
-  // Render loop at screen rate so the sway stays smooth.
-  (function renderLoop() {
-    render();
-    requestAnimationFrame(renderLoop);
-  })();
+  function formatTime(ms) {
+    if (ms < 0) ms = 0;
+    const s = Math.ceil(ms / 1000);
+    const m = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    return m + ':' + ss;
+  }
 
-  updateHud();
-
-  window.addEventListener('beforeunload', () => window.save(plant));
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      window.save(plant);
+  function updateHud() {
+    timerEl.textContent = formatTime(timeLeft);
+    scoreEl.textContent = 'Score: ' + score;
+    bestEl.textContent = 'Best: ' + Math.max(bestScore, score);
+    if (gameState === 'playing' && timeLeft <= 10000) {
+      timerEl.classList.add('urgent');
     } else {
-      window.catchUp(plant, SPECIES_M);
-      lastSimTick = Date.now();
-      updateHud();
+      timerEl.classList.remove('urgent');
+    }
+  }
+
+  function draw(x, frame, standing, now) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+
+    for (const r of rabbits) {
+      if (r.caught != null) {
+        const t = Math.min(1, (now - r.caught) / CAUGHT_DURATION);
+        drawBurst(r.x + Math.floor(RW / 2), r.y + Math.floor(RH / 2), t);
+      } else {
+        const age = now - r.born;
+        const remaining = (r.life || RABBIT_LIFE) - age;
+        // Hop animation
+        const hop = Math.abs(Math.sin(age / 180)) * 2;
+        const dy = -Math.round(hop);
+        // Flicker in final 1s
+        if (remaining < 1000) {
+          const phase = Math.floor(age / 90) % 2;
+          if (phase === 0) continue;
+        }
+        drawRabbit(r.x, r.y + dy, r.type);
+      }
+    }
+
+    const bob = standing ? 0 : (frame === 0 ? 0 : -1);
+    drawLeopard(Math.floor(x), groundY - 12 + bob, frame, standing);
+  }
+
+  function pointerToCanvas(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / rect.width) * W,
+      y: ((clientY - rect.top) / rect.height) * H,
+    };
+  }
+
+  function isOnLeopard(cx, cy) {
+    const lx = pos;
+    const ly = groundY - 12;
+    const pad = 3;
+    return cx >= lx - pad && cx <= lx + 24 + pad && cy >= ly - pad && cy <= ly + 13 + pad;
+  }
+
+  let dragOffset = 0;
+
+  function setGroundFromClient(clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = (clientY - rect.top) / rect.height;
+    let y = Math.round(ratio * H) + dragOffset;
+    if (y < groundMin) y = groundMin;
+    if (y > groundMax) y = groundMax;
+    groundY = y;
+  }
+
+  let downOnLeopard = false;
+  let downX = 0, downY = 0;
+  let didDrag = false;
+  const dragThreshold = 6;
+
+  canvas.addEventListener('pointerdown', (e) => {
+    initAudio();
+    if (gameState !== 'playing') return;
+    const p = pointerToCanvas(e.clientX, e.clientY);
+    if (!isOnLeopard(p.x, p.y)) return;
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    downX = p.x; downY = p.y; didDrag = false;
+    downOnLeopard = true;
+    dragOffset = groundY - p.y;
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!downOnLeopard) return;
+    if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+      e.preventDefault();
+      const p = pointerToCanvas(e.clientX, e.clientY);
+      if (Math.abs(p.x - downX) > dragThreshold || Math.abs(p.y - downY) > dragThreshold) {
+        didDrag = true;
+      }
+      setGroundFromClient(e.clientY);
     }
   });
+  canvas.addEventListener('pointerup', (e) => {
+    if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId);
+    }
+    if (downOnLeopard && !didDrag) {
+      walking = !walking;
+    }
+    downOnLeopard = false;
+    dragOffset = 0;
+  });
+  canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+  overlay.addEventListener('click', () => {
+    initAudio();
+    resetGame();
+  });
+
+  function endGame() {
+    gameState = 'over';
+    walking = false;
+    let newBest = false;
+    if (score > bestScore) {
+      bestScore = score;
+      try { localStorage.setItem('rabbitHuntBest', String(bestScore)); } catch (e) {}
+      newBest = true;
+    }
+    overScoreEl.textContent = 'Score: ' + score + (newBest ? '  🏆 NEW BEST!' : '');
+    overStatsEl.textContent = 'Caught: ' + caughtCount + ' · Missed: ' + missedCount + ' · Best streak: ' + bestStreak;
+    overlay.classList.add('show');
+    timerEl.classList.remove('urgent');
+  }
+
+  function resetGame() {
+    score = 0;
+    timeLeft = GAME_DURATION;
+    rabbits.length = 0;
+    spawnTimer = 0;
+    nextSpawn = 500 + Math.random() * 900;
+    for (const g of goldSchedule) g.spawned = false;
+    pos = W;
+    walking = true;
+    gameState = 'playing';
+    caughtCount = 0;
+    missedCount = 0;
+    combo = 0;
+    bestStreak = 0;
+    lastCatchTime = -Infinity;
+    lastTickSecond = -1;
+    overlay.classList.remove('show');
+    updateHud();
+  }
+
+  let pos = W;
+  let frame = 0;
+  let frameTimer = 0;
+  let last = performance.now();
+  let walking = true;
+  const speed = 0.45;
+  const frameInterval = 150;
+
+  function loop(now) {
+    const dt = now - last;
+    last = now;
+
+    if (gameState === 'playing') {
+      timeLeft -= dt;
+      if (timeLeft <= 0) {
+        timeLeft = 0;
+        endGame();
+      }
+    }
+
+    if (walking && gameState === 'playing') {
+      pos -= speed * (dt / 16.667);
+      if (pos < -26) pos = W + 4;
+      frameTimer += dt;
+      if (frameTimer >= frameInterval) {
+        frameTimer -= frameInterval;
+        frame = 1 - frame;
+      }
+    }
+
+    updateRabbits(dt, now);
+    draw(pos, frame, !walking, now);
+    updateHud();
+    requestAnimationFrame(loop);
+  }
+  updateHud();
+  requestAnimationFrame(t => { last = t; loop(t); });
 })();
 </script>
 </body>
