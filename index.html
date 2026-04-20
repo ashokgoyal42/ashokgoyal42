@@ -85,8 +85,8 @@
     raceFinishTime = 0;
     for (const s of horseStates) {
       s.x = HORSE_X;
-      // Base speed between ~45 and 62 px/sec — race lasts ~4.5 to 6 seconds
-      s.speed = 0.045 + Math.random() * 0.017;
+      // Distance is ~271px; pick a base speed so each horse finishes in 4-7s
+      s.speed = 0.039 + Math.random() * 0.029;
       s.noisePhase = Math.random() * Math.PI * 2;
       s.frame = 0;
       s.frameT = 0;
