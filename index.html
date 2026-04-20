@@ -104,13 +104,6 @@
   }
   button:hover { background: #3d87e6; }
   button:active { background: #2363b8; transform: scale(0.97); }
-  .info {
-    font-size: 12px;
-    opacity: 0.6;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-    min-height: 1em;
-  }
 </style>
 </head>
 <body>
@@ -129,7 +122,6 @@
         <div id="stageVal" class="val">1 / 5</div>
       </div>
       <button id="water">Water +30%</button>
-      <div class="info" id="info">&nbsp;</div>
     </div>
   </div>
 <script>
@@ -141,7 +133,6 @@
   const growthFill = document.getElementById('growthFill');
   const stageVal = document.getElementById('stageVal');
   const waterBtn = document.getElementById('water');
-  const infoEl = document.getElementById('info');
 
   // Logical drawing space stays 400×400 so all draw code is untouched.
   // We scale the backing store to devicePixelRatio for crisp rendering.
@@ -315,32 +306,36 @@
     ctx.ellipse(CX, topY, topRx, topRy, 0, 0, Math.PI, false);
     ctx.closePath();
 
+    // Warm neutral stone — deliberately low-saturation so the flower pops.
     const bodyGrad = ctx.createLinearGradient(CX - topRx, 0, CX + topRx, 0);
-    bodyGrad.addColorStop(0, '#5e2208');
-    bodyGrad.addColorStop(0.18, '#9a4018');
-    bodyGrad.addColorStop(0.5, '#dc8048');
-    bodyGrad.addColorStop(0.82, '#9a4018');
-    bodyGrad.addColorStop(1, '#5e2208');
+    bodyGrad.addColorStop(0, '#2a2722');
+    bodyGrad.addColorStop(0.18, '#504a42');
+    bodyGrad.addColorStop(0.5, '#8c8578');
+    bodyGrad.addColorStop(0.82, '#504a42');
+    bodyGrad.addColorStop(1, '#2a2722');
     ctx.fillStyle = bodyGrad;
     ctx.fill();
 
-    // Subtle vertical sheen down the pot
+    // Soft vertical sheen
     const sheen = ctx.createLinearGradient(CX - topRx, 0, CX + topRx, 0);
-    sheen.addColorStop(0, 'rgba(255,200,160,0)');
-    sheen.addColorStop(0.35, 'rgba(255,200,160,0.18)');
-    sheen.addColorStop(0.5, 'rgba(255,200,160,0)');
+    sheen.addColorStop(0, 'rgba(255,245,225,0)');
+    sheen.addColorStop(0.38, 'rgba(255,245,225,0.12)');
+    sheen.addColorStop(0.5, 'rgba(255,245,225,0)');
     sheen.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = sheen;
     ctx.fill();
 
+    // Painted message on the pot body
+    drawPotMessage(currentMessage());
+
     // Top rim: full ellipse (outer)
-    ctx.fillStyle = '#8c3010';
+    ctx.fillStyle = '#3a352e';
     ctx.beginPath();
     ctx.ellipse(CX, topY, topRx, topRy, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Rim highlight (top arc only — lit from upper-left)
-    ctx.strokeStyle = 'rgba(255,210,170,0.45)';
+    // Rim highlight (upper arc — lit from upper-left)
+    ctx.strokeStyle = 'rgba(255,245,225,0.35)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.ellipse(CX, topY, topRx, topRy, 0, Math.PI + 0.15, Math.PI * 2 - 0.15);
@@ -350,7 +345,7 @@
     const innerRx = topRx - rimThick;
     const innerRy = topRy - rimThick * 0.45;
     const innerY = topY + 3;
-    ctx.fillStyle = '#1a0e06';
+    ctx.fillStyle = '#12100d';
     ctx.beginPath();
     ctx.ellipse(CX, innerY, innerRx, innerRy, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -394,74 +389,153 @@
     }
   }
 
-  // Draw a side-view leaf pair on the stem.
+  function drawPotMessage(msg) {
+    if (!msg) return;
+    const y = (POT.topY + POT.botY) / 2 + 8;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    // Inscribed / painted look: dark imprint + faint highlight beneath.
+    ctx.fillStyle = 'rgba(255,248,230,0.10)';
+    ctx.fillText(msg, CX, y + 1);
+    ctx.fillStyle = 'rgba(20,18,14,0.55)';
+    ctx.fillText(msg, CX, y);
+    ctx.restore();
+  }
+
+  // Side-view leaf with tonal gradient and a soft highlight.
   // stemX/stemY = attachment point on stem; side = -1 (left) or +1 (right)
   function drawLeaf(stemX, stemY, side, length, droop) {
     const width = length * 0.42;
     ctx.save();
     ctx.translate(stemX, stemY);
-    // Slight upward arc; droop pulls the tip down as leaf gets bigger
     ctx.rotate(side * (0.25 + droop));
-    ctx.fillStyle = '#25461a';
+
+    // Shadow underside — a hair wider, shifted down
+    ctx.fillStyle = '#11220d';
     ctx.beginPath();
-    ctx.ellipse(side * length * 0.55, 1, length, width, 0, 0, Math.PI * 2);
+    ctx.ellipse(side * length * 0.55, 1.8, length * 1.02, width * 1.04, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#4f8a2c';
+
+    // Main leaf body with a gradient from base (deep forest) to tip (young chartreuse)
+    const body = ctx.createLinearGradient(0, 0, side * length * 1.35, 0);
+    body.addColorStop(0,    '#1d3a14');
+    body.addColorStop(0.35, '#356820');
+    body.addColorStop(0.75, '#68b236');
+    body.addColorStop(1,    '#b4e05a');
+    ctx.fillStyle = body;
     ctx.beginPath();
-    ctx.ellipse(side * length * 0.52, 0, length * 0.94, width * 0.88, 0, 0, Math.PI * 2);
+    ctx.ellipse(side * length * 0.52, 0, length * 0.96, width * 0.9, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // Top-edge gloss: narrow bright crescent near the upper rim
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(side * length * 0.52, 0, length * 0.96, width * 0.9, 0, 0, Math.PI * 2);
+    ctx.clip();
+    const gloss = ctx.createLinearGradient(0, -width, 0, 0);
+    gloss.addColorStop(0, 'rgba(230,255,190,0)');
+    gloss.addColorStop(0.7, 'rgba(210,255,170,0.35)');
+    gloss.addColorStop(1, 'rgba(210,255,170,0)');
+    ctx.fillStyle = gloss;
+    ctx.fillRect(-length * 0.2, -width, length * 1.6, width * 0.9);
+    ctx.restore();
+
     // Midrib vein
-    ctx.strokeStyle = '#25461a';
+    ctx.strokeStyle = '#1a3210';
     ctx.lineWidth = 0.9;
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(side * length * 1.35, -1);
+    ctx.lineTo(side * length * 1.35, -0.5);
     ctx.stroke();
+
+    // Lateral veins
+    ctx.strokeStyle = 'rgba(26,50,16,0.55)';
+    ctx.lineWidth = 0.5;
+    for (let v = 0; v < 3; v++) {
+      const t = 0.3 + v * 0.22;
+      const vx = side * length * 1.35 * t;
+      const up = v % 2 === 0;
+      ctx.beginPath();
+      ctx.moveTo(vx, -0.4);
+      ctx.lineTo(vx + side * length * 0.12, (up ? -1 : 1) * width * 0.55);
+      ctx.stroke();
+    }
+
     ctx.restore();
   }
 
-  // Ring of petals drawn on the tilted flower head plane (caller handles tilt).
-  function drawPetalRing(r, count, rr, pl, pw, color, angleOffset) {
+  // Ring of petals with a base→tip gradient per petal for depth.
+  function drawPetalRing(r, count, rr, pl, pw, baseCol, tipCol, angleOffset) {
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + angleOffset;
       ctx.save();
       ctx.translate(Math.cos(a) * r * rr, Math.sin(a) * r * rr);
       ctx.rotate(a);
-      ctx.fillStyle = color;
+      const g = ctx.createLinearGradient(-r * pl, 0, r * pl, 0);
+      g.addColorStop(0, baseCol);
+      g.addColorStop(0.55, tipCol);
+      g.addColorStop(1, tipCol);
+      ctx.fillStyle = g;
       ctx.beginPath();
       ctx.ellipse(0, 0, r * pl, r * pw, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // subtle tip highlight
+      ctx.fillStyle = 'rgba(255,245,210,0.22)';
+      ctx.beginPath();
+      ctx.ellipse(r * pl * 0.55, 0, r * pl * 0.3, r * pw * 0.45, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
   }
 
-  // Draw a marigold head at (cx, cy), radius r. Tilted slightly toward camera
-  // by compressing Y so it reads as a 3D disc.
+  // Marigold head at (cx, cy), radius r. Compressed on Y so it reads as a disc
+  // tilted toward the camera.
   function drawFlowerHead(cx, cy, r, full) {
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.scale(1, 0.78);   // isometric-ish tilt
+    ctx.scale(1, 0.78);
+
     if (full) {
-      drawPetalRing(r, 14, 0.60, 0.48, 0.22, '#a04610', 0);
-      drawPetalRing(r, 14, 0.48, 0.44, 0.20, '#c8621a', Math.PI / 14);
-      drawPetalRing(r, 12, 0.34, 0.36, 0.18, '#e88325', 0);
-      drawPetalRing(r, 10, 0.22, 0.28, 0.16, '#f5a830', Math.PI / 10);
-      drawPetalRing(r,  8, 0.10, 0.18, 0.12, '#ffc85a', 0);
+      // Deepest outer ring: crimson base, flame tip
+      drawPetalRing(r, 14, 0.60, 0.50, 0.22, '#6a1a08', '#e86018', 0);
+      drawPetalRing(r, 14, 0.48, 0.46, 0.20, '#8c2a0a', '#f27a1c', Math.PI / 14);
+      drawPetalRing(r, 12, 0.36, 0.40, 0.18, '#b04418', '#f89420', 0);
+      drawPetalRing(r, 10, 0.24, 0.30, 0.16, '#cc6418', '#ffbc3c', Math.PI / 10);
+      drawPetalRing(r,  8, 0.12, 0.20, 0.12, '#d88820', '#ffe078', 0);
     } else {
-      drawPetalRing(r, 8, 0.58, 0.52, 0.28, '#c05418', 0);
-      drawPetalRing(r, 8, 0.40, 0.44, 0.24, '#e88225', Math.PI / 8);
-      drawPetalRing(r, 8, 0.22, 0.32, 0.20, '#f5a840', 0);
+      drawPetalRing(r, 8, 0.58, 0.54, 0.28, '#7a220a', '#e07018', 0);
+      drawPetalRing(r, 8, 0.40, 0.46, 0.24, '#a8420f', '#f39025', Math.PI / 8);
+      drawPetalRing(r, 8, 0.22, 0.34, 0.20, '#c45e18', '#fbb842', 0);
     }
-    ctx.fillStyle = full ? '#c96820' : '#a24818';
+
+    // Core with a warm radial gradient
+    const coreR = r * 0.16;
+    const core = ctx.createRadialGradient(-coreR * 0.3, -coreR * 0.4, 0, 0, 0, coreR);
+    core.addColorStop(0, full ? '#ffe088' : '#ffc878');
+    core.addColorStop(0.6, full ? '#f08420' : '#d46418');
+    core.addColorStop(1, full ? '#7a2608' : '#5e1a04');
+    ctx.fillStyle = core;
     ctx.beginPath();
-    ctx.arc(0, 0, r * 0.13, 0, Math.PI * 2);
+    ctx.arc(0, 0, coreR, 0, Math.PI * 2);
     ctx.fill();
+
     if (full) {
-      ctx.fillStyle = '#ffe590';
+      // Pollen dots on the core
+      ctx.fillStyle = '#3a1a08';
+      for (let i = 0; i < 7; i++) {
+        const a = i * 1.7;
+        const rr = coreR * 0.6 * Math.sqrt(i / 7);
+        ctx.fillRect(Math.cos(a) * rr, Math.sin(a) * rr, 1.2, 1.2);
+      }
+      // Gloss sparkle
+      ctx.fillStyle = 'rgba(255,250,220,0.9)';
       ctx.beginPath();
-      ctx.arc(-r * 0.03, -r * 0.04, r * 0.06, 0, Math.PI * 2);
+      ctx.arc(-coreR * 0.25, -coreR * 0.35, coreR * 0.18, 0, Math.PI * 2);
       ctx.fill();
     }
+
     ctx.restore();
   }
 
@@ -580,16 +654,15 @@
     const growthPct = (state.growth / TOTAL_GROWTH_MS) * 100;
     growthFill.style.width = Math.min(100, growthPct) + '%';
     stageVal.textContent = stage + ' / ' + MAX_STAGES;
+  }
 
-    if (stage >= MAX_STAGES) {
-      infoEl.textContent = 'In full bloom';
-    } else if (m < MIN_MOIST) {
-      infoEl.textContent = 'Too dry — growth paused';
-    } else if (m > MAX_MOIST) {
-      infoEl.textContent = 'Too wet — growth paused';
-    } else {
-      infoEl.textContent = 'Growing…';
-    }
+  function currentMessage() {
+    const m = state.moisture;
+    const stage = currentStage();
+    if (m < MIN_MOIST) return 'NEEDS WATER';
+    if (m > MAX_MOIST) return 'TOO WET';
+    if (stage >= MAX_STAGES) return 'IN BLOOM';
+    return 'GROWING';
   }
 
   waterBtn.addEventListener('click', () => {
