@@ -91,8 +91,14 @@
   const TRACK_Y = TOP;
   const TRACK_H = LANES * LANE_H;
   const BOTTOM_Y = TRACK_Y + TRACK_H;
-  const GATE_X = 28;        // left edge of starting gate
-  const GATE_W = 12;
+  // Starting gate: outer posts at STALL_LEFT..STALL_RIGHT; horses stand inside;
+  // a front door at DOOR_X occludes them until the race starts.
+  const STALL_LEFT = 15;
+  const STALL_BACK_X = 16;  // thin back wall
+  const HORSE_X = 18;       // left edge of horse sprite (head reaches x=35)
+  const DOOR_X = 37;
+  const DOOR_W = 3;
+  const STALL_RIGHT = 41;
   const FINISH_X = W - 14;
 
   function drawSky() {
@@ -157,26 +163,51 @@
     rect(FINISH_X - 1, TRACK_Y - 6, 8, 2, '#d62828');
   }
 
-  function drawGate() {
-    // full-height gate structure
-    // back frame
-    rect(GATE_X - 2, TRACK_Y - 4, 1, TRACK_H + 4, '#222');
-    rect(GATE_X + GATE_W, TRACK_Y - 4, 1, TRACK_H + 4, '#222');
-    rect(GATE_X - 2, TRACK_Y - 4, GATE_W + 3, 1, '#222');
-
-    for (let i = 0; i < LANES; i++) {
+  function drawGateFrame() {
+    // Back wall + outer posts + top beam + lane dividers. Always visible.
+    const topY = TRACK_Y - 4;
+    const frameW = STALL_RIGHT - STALL_LEFT + 1;
+    // Top beam
+    rect(STALL_LEFT, topY, frameW, 2, '#222');
+    rect(STALL_LEFT, topY + 2, frameW, 1, '#5a5a5a');
+    // Outer posts
+    rect(STALL_LEFT, topY, 1, TRACK_H + 4, '#222');
+    rect(STALL_RIGHT, topY, 1, TRACK_H + 4, '#222');
+    // Back wall (thin padded bar)
+    rect(STALL_BACK_X, TRACK_Y, 1, TRACK_H, '#4a3020');
+    // Lane dividers between stalls
+    for (let i = 1; i < LANES; i++) {
       const y = TRACK_Y + i * LANE_H;
-      // gate body per lane
-      rect(GATE_X - 1, y, GATE_W + 2, LANE_H, GATE);
-      // highlight
-      rect(GATE_X - 1, y, GATE_W + 2, 1, GATE_HI);
-      // horizontal divider
-      if (i > 0) rect(GATE_X - 1, y, GATE_W + 2, 1, '#111');
-      // lane number panel
-      drawNumber(GATE_X + 2, y + 5, i + 1);
+      rect(STALL_LEFT + 1, y - 1, STALL_RIGHT - STALL_LEFT - 1, 1, '#111');
+      rect(STALL_LEFT + 1, y, STALL_RIGHT - STALL_LEFT - 1, 1, '#4a4a4a');
     }
-    // bottom edge
-    rect(GATE_X - 2, BOTTOM_Y, GATE_W + 3, 1, '#111');
+    // Bottom cap
+    rect(STALL_LEFT, BOTTOM_Y, STALL_RIGHT - STALL_LEFT + 1, 1, '#111');
+  }
+
+  function drawGateDoors() {
+    // Each lane's front door rolls up into the roof as openProgress goes 0 -> 1.
+    for (let i = 0; i < LANES; i++) {
+      const laneTop = TRACK_Y + i * LANE_H + 1;
+      const laneBot = TRACK_Y + (i + 1) * LANE_H - 1;
+      const fullH = laneBot - laneTop;
+      const doorH = Math.max(0, Math.ceil(fullH * (1 - openProgress)));
+      if (doorH <= 0) continue;
+      const doorTop = laneTop;
+      // Door body
+      rect(DOOR_X, doorTop, DOOR_W, doorH, GATE);
+      // top highlight
+      rect(DOOR_X, doorTop, DOOR_W, 1, GATE_HI);
+      // vertical bar accents
+      for (let y = doorTop + 2; y < doorTop + doorH - 1; y += 3) {
+        px(DOOR_X + 1, y, '#1a1a1a');
+      }
+      // lane number (only while the door is tall enough)
+      if (doorH >= 7) {
+        const numY = doorTop + Math.floor((doorH - 5) / 2);
+        drawNumber(DOOR_X, numY, i + 1);
+      }
+    }
   }
 
   // tiny 3x5 digit font
@@ -241,12 +272,11 @@
   }
 
   function drawHorses() {
-    // Horses start just behind the gate opening
-    const horseX = GATE_X + GATE_W + 1;
+    // Horses stand inside their stalls, behind the front door
     for (let i = 0; i < LANES; i++) {
       const y = TRACK_Y + i * LANE_H;
       const h = HORSES[i];
-      drawHorse(horseX, y + 3, h.body, h.mane);
+      drawHorse(HORSE_X, y + 3, h.body, h.mane);
     }
   }
 
@@ -255,10 +285,13 @@
     ctx.fillRect(0, 0, W, H);
     drawSky();
     drawTrack();
-    drawGate();
+    drawGround();
     drawFinishLine();
-    drawHorses();
+    drawHorses();       // horses first...
+    drawGateFrame();    // ...then the stall frame over them
+    drawGateDoors();    // ...then the animated front doors
     drawTitle();
+    drawPrompt();
   }
 
   function drawTitle() {
@@ -289,7 +322,100 @@
     }
   }
 
-  render();
+  // ---- Race state & gate-opening animation ----
+  let raceState = 'ready';          // 'ready' | 'opening' | 'open'
+  let openProgress = 0;             // 0 (closed) -> 1 (fully open)
+  let openStart = 0;
+  const OPEN_DURATION = 700;        // ms
+  let promptBlink = 0;
+
+  // Simple bell sound on start
+  let audioCtx = null;
+  function initAudio() {
+    if (audioCtx) return;
+    try {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (Ctor) audioCtx = new Ctor();
+    } catch (e) {}
+  }
+  function playBell() {
+    if (!audioCtx) return;
+    const t0 = audioCtx.currentTime;
+    [880, 1320].forEach((f, i) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(f, t0 + i * 0.08);
+      g.gain.setValueAtTime(0.18, t0 + i * 0.08);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + i * 0.08 + 0.45);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(t0 + i * 0.08);
+      o.stop(t0 + i * 0.08 + 0.5);
+    });
+  }
+
+  // "CLICK TO START" prompt (blinks until race starts)
+  function drawPrompt() {
+    if (raceState !== 'ready') return;
+    if (Math.floor(promptBlink / 400) % 2 === 1) return;
+    const FONT = {
+      'C': ['XXX','X..','X..','X..','XXX'],
+      'L': ['X..','X..','X..','X..','XXX'],
+      'I': ['XXX','.X.','.X.','.X.','XXX'],
+      'K': ['X.X','XX.','X..','XX.','X.X'],
+      'T': ['XXX','.X.','.X.','.X.','.X.'],
+      'O': ['XXX','X.X','X.X','X.X','XXX'],
+      'S': ['XXX','X..','XXX','..X','XXX'],
+      'A': ['.X.','X.X','XXX','X.X','X.X'],
+      'R': ['XX.','X.X','XX.','X.X','X.X'],
+      ' ': ['...','...','...','...','...'],
+    };
+    const text = 'CLICK TO START';
+    const x0 = Math.floor((W - text.length * 4) / 2);
+    const y0 = H - 10;
+    for (let i = 0; i < text.length; i++) {
+      const g = FONT[text[i]];
+      if (!g) continue;
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 3; c++) {
+          if (g[r][c] === 'X') px(x0 + i * 4 + c, y0 + r, '#ffff40');
+        }
+      }
+    }
+  }
+
+  function startRace() {
+    if (raceState !== 'ready') return;
+    raceState = 'opening';
+    openStart = performance.now();
+    initAudio();
+    playBell();
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    initAudio();
+    startRace();
+  });
+  canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+
+  // ---- Main loop ----
+  let last = performance.now();
+  function loop(now) {
+    const dt = now - last;
+    last = now;
+
+    if (raceState === 'ready') {
+      promptBlink = (promptBlink + dt) % 800;
+    } else if (raceState === 'opening') {
+      openProgress = Math.min(1, (now - openStart) / OPEN_DURATION);
+      if (openProgress >= 1) raceState = 'open';
+    }
+
+    render();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(t => { last = t; loop(t); });
 })();
 </script>
 </body>
