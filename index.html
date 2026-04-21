@@ -333,6 +333,7 @@
   }
 
   function drawHorses() {
+    const now = performance.now();
     for (let i = 0; i < LANES; i++) {
       const y = TRACK_Y + i * LANE_H;
       const h = HORSES[i];
@@ -341,9 +342,37 @@
       const bob = (running && s.frame === 1) ? -1 : 0;
       const hx = Math.floor(s.x);
       drawShadow(hx, y);
+      // Yellow speed lines briefly trail the horse after a cheer boost
+      if (s.cheerFlash && now - s.cheerFlash < 180) {
+        const fade = 1 - (now - s.cheerFlash) / 180;
+        const col = fade > 0.5 ? '#ffd448' : '#ffe88a';
+        rect(hx - 6, y + 6,  4, 1, col);
+        rect(hx - 7, y + 9,  3, 1, col);
+        rect(hx - 5, y + 11, 3, 1, col);
+      }
       drawHorse(hx, y + 3 + bob, h.body, h.mane, s.frame);
-      // Jockey sits crouched on the horse's back, centered on the body
       drawJockey(hx + 6, y + 3 + bob, h.silk);
+    }
+  }
+
+  // Cheer stamina bar in the top-left corner during a live race
+  function drawStaminaBar() {
+    if (raceState !== 'running' && raceState !== 'opening') return;
+    if (selectedHorse === null) return;
+    const bx = 6;
+    drawText('CHEER', bx, 4, '#ffffff');
+    const barY = 11;
+    const barW = 28;
+    const barH = 4;
+    rect(bx, barY, barW, barH, '#1a1a22');
+    const fillW = Math.floor((stamina / STAMINA_MAX) * (barW - 2));
+    const fillCol = stamina >= 1 ? '#5aff5a' : '#884444';
+    if (fillW > 0) rect(bx + 1, barY + 1, fillW, barH - 2, fillCol);
+    // Tick marks for each stamina pip
+    for (let i = 1; i < STAMINA_MAX; i++) {
+      const tx = bx + Math.floor((i / STAMINA_MAX) * barW);
+      px(tx, barY, '#1a1a22');
+      px(tx, barY + barH - 1, '#1a1a22');
     }
   }
 
@@ -359,6 +388,7 @@
     drawGateDoors();    // ...then the animated front doors
     drawTitle();
     drawBank();
+    drawStaminaBar();
     drawSwatches();
     drawWinnerBanner();
     drawPrompt();
@@ -387,7 +417,13 @@
   const PAYOUT = 8;
   let bank = STARTING_BANK;
   let selectedHorse = null;         // index 0..7, null while unpicked
-  let lastWin = null;               // PAYOUT if last bet won, -BET_AMOUNT if lost
+  let lastWin = null;               // PAYOUT if last bet won, 0 if lost
+
+  // ---- Cheer (tap-to-boost your horse during the race) ----
+  const STAMINA_MAX = 5;
+  const STAMINA_REGEN_PER_MS = 0.0005; // ~0.5 per second
+  const BOOST_IMPULSE = 3;             // px added per cheer tap
+  let stamina = STAMINA_MAX;
 
   // Selector-swatch layout in the grass band
   const SWATCH_W = 22;
@@ -446,6 +482,20 @@
       o.start(t0 + i * 0.08);
       o.stop(t0 + i * 0.08 + 0.5);
     });
+  }
+  function playCheer() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'square';
+    o.frequency.setValueAtTime(900, t);
+    o.frequency.linearRampToValueAtTime(1500, t + 0.08);
+    g.gain.setValueAtTime(0.08, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t);
+    o.stop(t + 0.13);
   }
   function playFanfare() {
     if (!audioCtx) return;
@@ -545,6 +595,8 @@
       if (bank < BET_AMOUNT) text = 'BUSTED - TAP TO RESET';
       else if (selectedHorse === null) text = 'PICK YOUR HORSE';
       else text = 'PICK #' + (selectedHorse + 1) + '  TAP TO RACE';
+    } else if (raceState === 'running' && selectedHorse !== null) {
+      text = stamina >= 1 ? 'TAP TO CHEER #' + (selectedHorse + 1) + '!' : 'CATCH BREATH...';
     } else if (raceState === 'finished') {
       if (lastWin > 0) text = 'YOU WON +$' + lastWin + '!';
       else text = 'YOU LOST -$' + BET_AMOUNT;
@@ -664,7 +716,6 @@
     const p = pointerToCanvas(e.clientX, e.clientY);
     if (raceState === 'ready') {
       if (bank < BET_AMOUNT) {
-        // Bankroll recovery — tap anywhere to reset
         bank = STARTING_BANK;
         selectedHorse = null;
         return;
@@ -677,7 +728,17 @@
       if (selectedHorse === null) return;
       bank -= BET_AMOUNT;
       lastWin = null;
+      stamina = STAMINA_MAX;
       startRace();
+    } else if (raceState === 'running') {
+      // Tap-to-cheer: boost the player's horse at the cost of one stamina pip
+      if (selectedHorse === null || stamina < 1) return;
+      const s = horseStates[selectedHorse];
+      if (s.finished) return;
+      s.x += BOOST_IMPULSE;
+      s.cheerFlash = performance.now();
+      stamina -= 1;
+      playCheer();
     } else if (raceState === 'finished') {
       restartRace();
     }
@@ -702,6 +763,7 @@
       }
     }
     if (raceState === 'running') {
+      stamina = Math.min(STAMINA_MAX, stamina + STAMINA_REGEN_PER_MS * dt);
       const finishLineX = FINISH_X - FINISH_HEAD_OFFSET;
       let allDone = true;
       for (const s of horseStates) {
