@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rabbit Hunt</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #ffffff;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "SF Mono", "Menlo", "Courier New", monospace;
+  }
+  #stage {
+    position: relative;
+    width: 100vw;
+    max-width: 900px;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    background: #ffffff;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+  }
+  #hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+    color: #2b1810;
+    font-weight: 700;
+    font-size: clamp(14px, 2.4vw, 22px);
+    letter-spacing: 0.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+  #hudRight { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+  #best { font-size: 0.7em; opacity: 0.7; font-weight: 600; }
+  #title { }
+  #timer { font-variant-numeric: tabular-nums; transition: color 0.2s; }
+  #timer.urgent { color: #d62828; animation: pulse 0.6s ease-in-out infinite; }
+  #score { font-variant-numeric: tabular-nums; }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+  }
+  .popup {
+    position: absolute;
+    pointer-events: none;
+    font-weight: 800;
+    font-size: clamp(14px, 2.6vw, 22px);
+    color: #d62828;
+    transform: translate(-50%, -100%);
+    animation: floatUp 0.9s ease-out forwards;
+    text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;
+    -webkit-font-smoothing: antialiased;
+  }
+  .popup.gold { color: #c89010; }
+  @keyframes floatUp {
+    0% { opacity: 1; transform: translate(-50%, -100%); }
+    100% { opacity: 0; transform: translate(-50%, -220%); }
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(255,255,255,0.88);
+    color: #2b1810;
+    pointer-events: auto;
+    cursor: pointer;
+    text-align: center;
+    padding: 0 20px;
+  }
+  #overlay.show { display: flex; }
+  #overlay .big { font-size: clamp(22px, 5vw, 42px); font-weight: 800; }
+  #overlay .sub { font-size: clamp(14px, 2.4vw, 20px); }
+  #overlay .stats { font-size: clamp(12px, 2vw, 16px); opacity: 0.8; }
+  #overlay .hint { margin-top: 6px; font-size: clamp(12px, 2vw, 16px); opacity: 0.7; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c"></canvas>
+  <div id="hud">
+    <span id="title">RABBIT HUNT</span>
+    <span id="timer">1:00</span>
+    <span id="hudRight">
+      <span id="score">Score: 0</span>
+      <span id="best">Best: 0</span>
+    </span>
+  </div>
+  <div id="overlay">
+    <div class="big" id="overTitle">Time's up!</div>
+    <div class="sub" id="overScore">Score: 0</div>
+    <div class="stats" id="overStats">Caught: 0 · Missed: 0 · Best streak: 0</div>
+    <div class="hint">Tap to play again</div>
+  </div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const titleEl = document.getElementById('title');
+  const timerEl = document.getElementById('timer');
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const stage = document.getElementById('stage');
+  const overlay = document.getElementById('overlay');
+  const overScoreEl = document.getElementById('overScore');
+  const overStatsEl = document.getElementById('overStats');
+
+  const W = 240, H = 200;
+  canvas.width = W;
+  canvas.height = H;
+  ctx.imageSmoothingEnabled = false;
+
+  const C = {
+    o: '#2b1810',
+    y: '#e0a84a',
+    c: '#fbecd0',
+    s: '#4a2c18',
+    b: '#000000',
+    p: '#e87a92',
+    r: '#e02020',
+    rL: '#ff5050',
+  };
+
+  function px(x, y, col) {
+    if (!col) return;
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y, 1, 1);
+  }
+
+  // ---- Audio (lazy init on first user gesture) ----
+  let audioCtx = null;
+  function initAudio() {
+    if (!audioCtx) {
+      try {
+        const Ctor = window.AudioContext || window.webkitAudioContext;
+        if (Ctor) audioCtx = new Ctor();
+      } catch (e) { /* ignore */ }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function tone(freq, dur, type, vol, slideTo) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(vol || 0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+  function playPop() { tone(880, 0.14, 'triangle', 0.18, 220); }
+  function playSparkle() {
+    [880, 1320, 1760].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'sine', 0.16), i * 60));
+  }
+  function playTick() { tone(1400, 0.04, 'square', 0.07); }
+
+  // ---- Floating score popups (HTML overlays for sharp text) ----
+  function showPopup(canvasX, canvasY, text, gold) {
+    const rect = canvas.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const sx = (canvasX / W) * rect.width + (rect.left - stageRect.left);
+    const sy = (canvasY / H) * rect.height + (rect.top - stageRect.top);
+    const div = document.createElement('div');
+    div.className = 'popup' + (gold ? ' gold' : '');
+    div.textContent = text;
+    div.style.left = sx + 'px';
+    div.style.top = sy + 'px';
+    stage.appendChild(div);
+    setTimeout(() => div.remove(), 900);
+  }
+
+  function drawLeopard(ox, oy, frame, standing) {
+    px(ox+20, oy+4, C.o);
+    px(ox+21, oy+3, C.o);
+    px(ox+22, oy+2, C.o);
+    px(ox+22, oy+1, C.o);
+    px(ox+21, oy+1, C.y);
+    px(ox+21, oy+2, C.y);
+
+    for (let i = 5; i <= 19; i++) px(ox+i, oy+2, C.o);
+    for (let i = 5; i <= 19; i++) px(ox+i, oy+8, C.o);
+    px(ox+20, oy+3, C.o);
+    px(ox+20, oy+5, C.o);
+    px(ox+20, oy+6, C.o);
+    px(ox+20, oy+7, C.o);
+    px(ox+20, oy+8, C.o);
+
+    for (let j = 3; j <= 6; j++) {
+      for (let i = 5; i <= 19; i++) px(ox+i, oy+j, C.y);
+    }
+    for (let i = 5; i <= 19; i++) px(ox+i, oy+7, C.c);
+
+    px(ox+7,  oy+3, C.s);
+    px(ox+10, oy+4, C.s); px(ox+11, oy+4, C.s);
+    px(ox+14, oy+3, C.s);
+    px(ox+16, oy+5, C.s); px(ox+17, oy+5, C.s);
+    px(ox+13, oy+6, C.s);
+    px(ox+9,  oy+6, C.s);
+
+    for (let j = 3; j <= 6; j++) {
+      for (let i = 1; i <= 4; i++) px(ox+i, oy+j, C.y);
+    }
+    px(ox, oy+4, C.o);
+    px(ox, oy+5, C.o);
+    px(ox, oy+6, C.o);
+    px(ox+1, oy+3, C.o);
+    px(ox+2, oy+3, C.o);
+    px(ox+3, oy+3, C.o);
+    px(ox+4, oy+3, C.o);
+    px(ox+1, oy+7, C.o);
+    px(ox+2, oy+7, C.o);
+    px(ox+3, oy+7, C.o);
+    px(ox+4, oy+7, C.o);
+
+    px(ox+1, oy+2, C.o);
+    px(ox+4, oy+2, C.o);
+
+    px(ox+3, oy+5, C.b);
+    px(ox, oy+4, C.p);
+    px(ox+1, oy+6, C.s);
+
+    const legX = [7, 10, 16, 19];
+    const lenA = [3, 2, 2, 3];
+    const lenB = [2, 3, 3, 2];
+    const lenStand = [3, 3, 3, 3];
+    const lengths = standing ? lenStand : (frame === 0 ? lenA : lenB);
+
+    for (let k = 0; k < 4; k++) {
+      const lx = ox + legX[k];
+      const len = lengths[k];
+      for (let j = 0; j < len; j++) {
+        px(lx, oy + 9 + j, C.o);
+      }
+      px(lx - 1, oy + 9 + len - 1, C.o);
+      px(lx + 1, oy + 9 + len - 1, C.o);
+    }
+  }
+
+  const RW = 10, RH = 9;
+
+  function drawRabbit(ox, oy, type) {
+    const body = type === 'gold' ? '#f2c430' : C.c;
+    px(ox+2, oy,   C.o); px(ox+3, oy,   C.o);
+    px(ox+6, oy,   C.o); px(ox+7, oy,   C.o);
+    px(ox+2, oy+1, C.o); px(ox+3, oy+1, body);
+    px(ox+6, oy+1, body); px(ox+7, oy+1, C.o);
+    px(ox+2, oy+2, C.o); px(ox+3, oy+2, body);
+    px(ox+6, oy+2, body); px(ox+7, oy+2, C.o);
+    px(ox+1, oy+3, C.o); px(ox+8, oy+3, C.o);
+    for (let i = 2; i <= 7; i++) px(ox+i, oy+3, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+4, body);
+    px(ox+3, oy+4, C.b);
+    px(ox+6, oy+4, C.b);
+    px(ox,   oy+5, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+5, body);
+    px(ox+9, oy+5, C.o);
+    px(ox+4, oy+5, C.p);
+    px(ox+5, oy+5, C.p);
+    px(ox,   oy+6, C.o);
+    for (let i = 1; i <= 8; i++) px(ox+i, oy+6, body);
+    px(ox+9, oy+6, C.o);
+    px(ox+1, oy+7, C.o); px(ox+2, oy+7, C.o);
+    for (let i = 3; i <= 6; i++) px(ox+i, oy+7, body);
+    px(ox+7, oy+7, C.o); px(ox+8, oy+7, C.o);
+    px(ox+1, oy+8, C.o); px(ox+2, oy+8, C.o);
+    px(ox+7, oy+8, C.o); px(ox+8, oy+8, C.o);
+    if (type === 'gold') {
+      // sparkle
+      px(ox+5, oy+6, '#ffffff');
+      px(ox+2, oy+5, '#fff0a0');
+    }
+  }
+
+  function drawBurst(cx, cy, t) {
+    // t is 0..1 progress; bright red burst growing outward
+    const r = Math.floor(2 + t * 7);
+    const col = t < 0.5 ? C.rL : C.r;
+    for (let i = -r; i <= r; i++) {
+      px(cx + i, cy, col);
+      px(cx, cy + i, col);
+    }
+    const d = Math.max(1, Math.floor(r * 0.7));
+    for (let i = -d; i <= d; i++) {
+      px(cx + i, cy + i, col);
+      px(cx + i, cy - i, col);
+    }
+    // center highlight
+    px(cx, cy, '#ffffff');
+    px(cx+1, cy, '#ffffff');
+    px(cx-1, cy, '#ffffff');
+    px(cx, cy+1, '#ffffff');
+    px(cx, cy-1, '#ffffff');
+  }
+
+  let groundY = Math.floor(H * 0.6);
+  const groundMin = 13;
+  const groundMax = H - 1;
+
+  const rabbits = [];
+  const MAX_RABBITS = 3;
+  const RABBIT_LIFE = 5000;
+  const CAUGHT_DURATION = 500;
+  const GAME_DURATION = 60000;
+
+  let score = 0;
+  let spawnTimer = 0;
+  let nextSpawn = 500 + Math.random() * 900;
+  let gameState = 'playing';
+  let timeLeft = GAME_DURATION;
+  let lastTickSecond = -1;
+
+  // Stats / combo
+  let caughtCount = 0;
+  let missedCount = 0;
+  let combo = 0;
+  let lastCatchTime = -Infinity;
+  let bestStreak = 0;
+  const COMBO_WINDOW = 2000;
+
+  // High score
+  let bestScore = 0;
+  try { bestScore = parseInt(localStorage.getItem('rabbitHuntBest') || '0', 10) || 0; } catch (e) {}
+
+  const goldSchedule = [
+    { at: 30000, spawned: false },
+    { at: 55000, spawned: false },
+  ];
+
+  function spawnRabbit(type) {
+    const x = 4 + Math.floor(Math.random() * (W - RW - 8));
+    const y = 4 + Math.floor(Math.random() * (H - RH - 8));
+    const isGold = type === 'gold';
+    rabbits.push({
+      x, y,
+      born: performance.now(),
+      type: isGold ? 'gold' : 'normal',
+      life: isGold ? 3000 : RABBIT_LIFE,
+      points: isGold ? 5 : 1,
+    });
+  }
+
+  function updateRabbits(dt, now) {
+    for (let i = rabbits.length - 1; i >= 0; i--) {
+      const r = rabbits[i];
+      if (r.caught != null) {
+        if (now - r.caught >= CAUGHT_DURATION) rabbits.splice(i, 1);
+      } else if (now - r.born >= (r.life || RABBIT_LIFE)) {
+        rabbits.splice(i, 1);
+        if (gameState === 'playing') {
+          missedCount++;
+          combo = 0;
+        }
+      }
+    }
+    // Face-only hitbox: snout/head of the leopard (~5x5)
+    const fx = pos + 0;
+    const fy = groundY - 12 + 3;
+    const fw = 5;
+    const fh = 5;
+    for (const r of rabbits) {
+      if (r.caught != null) continue;
+      if (r.x + RW > fx && r.x < fx + fw && r.y + RH > fy && r.y < fy + fh) {
+        r.caught = now;
+        // Combo logic (resets if too long since last catch)
+        if (now - lastCatchTime <= COMBO_WINDOW) combo++;
+        else combo = 1;
+        lastCatchTime = now;
+        if (combo > bestStreak) bestStreak = combo;
+        const base = r.points || 1;
+        const bonus = combo > 1 ? (combo - 1) : 0;
+        const total = base + bonus;
+        score += total;
+        caughtCount++;
+        const cx = r.x + Math.floor(RW / 2);
+        const cy = r.y;
+        if (r.type === 'gold') {
+          showPopup(cx, cy, '+' + total + (bonus > 0 ? ' x' + combo + '!' : ''), true);
+          playSparkle();
+        } else {
+          showPopup(cx, cy, '+' + total + (bonus > 0 ? ' x' + combo + '!' : ''), false);
+          playPop();
+        }
+      }
+    }
+    if (gameState === 'playing') {
+      const elapsed = GAME_DURATION - timeLeft;
+      for (const g of goldSchedule) {
+        if (!g.spawned && elapsed >= g.at) {
+          g.spawned = true;
+          spawnRabbit('gold');
+        }
+      }
+      spawnTimer += dt;
+      const liveNormal = rabbits.filter(r => r.caught == null && r.type !== 'gold').length;
+      if (liveNormal < MAX_RABBITS && spawnTimer >= nextSpawn) {
+        spawnTimer = 0;
+        const urgent = timeLeft <= 10000;
+        const minMs = urgent ? 250 : 500;
+        const maxMs = urgent ? 700 : 1700;
+        nextSpawn = minMs + Math.random() * (maxMs - minMs);
+        spawnRabbit();
+      }
+      // Tick sound in last 5 seconds
+      const sec = Math.ceil(timeLeft / 1000);
+      if (sec !== lastTickSecond) {
+        lastTickSecond = sec;
+        if (sec >= 1 && sec <= 5) playTick();
+      }
+    }
+  }
+
+  function formatTime(ms) {
+    if (ms < 0) ms = 0;
+    const s = Math.ceil(ms / 1000);
+    const m = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    return m + ':' + ss;
+  }
+
+  function updateHud() {
+    timerEl.textContent = formatTime(timeLeft);
+    scoreEl.textContent = 'Score: ' + score;
+    bestEl.textContent = 'Best: ' + Math.max(bestScore, score);
+    if (gameState === 'playing' && timeLeft <= 10000) {
+      timerEl.classList.add('urgent');
+    } else {
+      timerEl.classList.remove('urgent');
+    }
+  }
+
+  function draw(x, frame, standing, now) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+
+    for (const r of rabbits) {
+      if (r.caught != null) {
+        const t = Math.min(1, (now - r.caught) / CAUGHT_DURATION);
+        drawBurst(r.x + Math.floor(RW / 2), r.y + Math.floor(RH / 2), t);
+      } else {
+        const age = now - r.born;
+        const remaining = (r.life || RABBIT_LIFE) - age;
+        // Hop animation
+        const hop = Math.abs(Math.sin(age / 180)) * 2;
+        const dy = -Math.round(hop);
+        // Flicker in final 1s
+        if (remaining < 1000) {
+          const phase = Math.floor(age / 90) % 2;
+          if (phase === 0) continue;
+        }
+        drawRabbit(r.x, r.y + dy, r.type);
+      }
+    }
+
+    const bob = standing ? 0 : (frame === 0 ? 0 : -1);
+    drawLeopard(Math.floor(x), groundY - 12 + bob, frame, standing);
+  }
+
+  function pointerToCanvas(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / rect.width) * W,
+      y: ((clientY - rect.top) / rect.height) * H,
+    };
+  }
+
+  function isOnLeopard(cx, cy) {
+    const lx = pos;
+    const ly = groundY - 12;
+    const pad = 3;
+    return cx >= lx - pad && cx <= lx + 24 + pad && cy >= ly - pad && cy <= ly + 13 + pad;
+  }
+
+  let dragOffset = 0;
+
+  function setGroundFromClient(clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = (clientY - rect.top) / rect.height;
+    let y = Math.round(ratio * H) + dragOffset;
+    if (y < groundMin) y = groundMin;
+    if (y > groundMax) y = groundMax;
+    groundY = y;
+  }
+
+  let downOnLeopard = false;
+  let downX = 0, downY = 0;
+  let didDrag = false;
+  const dragThreshold = 6;
+
+  canvas.addEventListener('pointerdown', (e) => {
+    initAudio();
+    if (gameState !== 'playing') return;
+    const p = pointerToCanvas(e.clientX, e.clientY);
+    if (!isOnLeopard(p.x, p.y)) return;
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    downX = p.x; downY = p.y; didDrag = false;
+    downOnLeopard = true;
+    dragOffset = groundY - p.y;
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!downOnLeopard) return;
+    if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+      e.preventDefault();
+      const p = pointerToCanvas(e.clientX, e.clientY);
+      if (Math.abs(p.x - downX) > dragThreshold || Math.abs(p.y - downY) > dragThreshold) {
+        didDrag = true;
+      }
+      setGroundFromClient(e.clientY);
+    }
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId);
+    }
+    if (downOnLeopard && !didDrag) {
+      walking = !walking;
+    }
+    downOnLeopard = false;
+    dragOffset = 0;
+  });
+  canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+  overlay.addEventListener('click', () => {
+    initAudio();
+    resetGame();
+  });
+
+  function endGame() {
+    gameState = 'over';
+    walking = false;
+    let newBest = false;
+    if (score > bestScore) {
+      bestScore = score;
+      try { localStorage.setItem('rabbitHuntBest', String(bestScore)); } catch (e) {}
+      newBest = true;
+    }
+    overScoreEl.textContent = 'Score: ' + score + (newBest ? '  🏆 NEW BEST!' : '');
+    overStatsEl.textContent = 'Caught: ' + caughtCount + ' · Missed: ' + missedCount + ' · Best streak: ' + bestStreak;
+    overlay.classList.add('show');
+    timerEl.classList.remove('urgent');
+  }
+
+  function resetGame() {
+    score = 0;
+    timeLeft = GAME_DURATION;
+    rabbits.length = 0;
+    spawnTimer = 0;
+    nextSpawn = 500 + Math.random() * 900;
+    for (const g of goldSchedule) g.spawned = false;
+    pos = W;
+    walking = true;
+    gameState = 'playing';
+    caughtCount = 0;
+    missedCount = 0;
+    combo = 0;
+    bestStreak = 0;
+    lastCatchTime = -Infinity;
+    lastTickSecond = -1;
+    overlay.classList.remove('show');
+    updateHud();
+  }
+
+  let pos = W;
+  let frame = 0;
+  let frameTimer = 0;
+  let last = performance.now();
+  let walking = true;
+  const speed = 0.45;
+  const frameInterval = 150;
+
+  function loop(now) {
+    const dt = now - last;
+    last = now;
+
+    if (gameState === 'playing') {
+      timeLeft -= dt;
+      if (timeLeft <= 0) {
+        timeLeft = 0;
+        endGame();
+      }
+    }
+
+    if (walking && gameState === 'playing') {
+      pos -= speed * (dt / 16.667);
+      if (pos < -26) pos = W + 4;
+      frameTimer += dt;
+      if (frameTimer >= frameInterval) {
+        frameTimer -= frameInterval;
+        frame = 1 - frame;
+      }
+    }
+
+    updateRabbits(dt, now);
+    draw(pos, frame, !walking, now);
+    updateHud();
+    requestAnimationFrame(loop);
+  }
+  updateHud();
+  requestAnimationFrame(t => { last = t; loop(t); });
+})();
+</script>
+</body>
+</html>

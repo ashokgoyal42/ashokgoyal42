@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Billiards</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #ffffff;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #222;
+  }
+  #wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  canvas {
+    display: block;
+    background: #ffffff;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  #hint {
+    font-size: 14px;
+    color: #555;
+    user-select: none;
+  }
+  button {
+    font: inherit;
+    padding: 6px 14px;
+    border: 1px solid #888;
+    background: #f6f6f6;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  button:hover { background: #eaeaea; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" width="800" height="500"></canvas>
+  <div id="hint">Aim with the mouse. Hold to set power (cue pulls back), release to shoot.</div>
+  <button id="reset">Reset Ball</button>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const resetBtn = document.getElementById('reset');
+
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // Table rectangle (the playfield inside the canvas)
+  const table = { x: 40, y: 40, w: W - 80, h: H - 80 };
+  const railColor = '#6b3a1f';
+  const feltColor = '#1f7a3a';
+
+  // Ball
+  const ball = {
+    x: table.x + table.w / 2,
+    y: table.y + table.h / 2,
+    r: 12,
+    vx: 0,
+    vy: 0,
+  };
+  const friction = 0.992;
+  const minSpeed = 0.04;
+  const restitution = 0.96;
+
+  // Cue (the long line)
+  const cue = {
+    length: 220,
+    thickness: 4,
+    color: '#c89a5a',
+    tipColor: '#2b1810',
+    gap: 6,          // gap between ball and cue tip when aiming
+    maxPull: 80,     // max pull-back distance while charging
+  };
+
+  const mouse = { x: W / 2, y: H / 2, inside: false };
+  let charging = false;
+  let chargeStart = 0;
+  const maxChargeMs = 900;
+
+  function resetBall() {
+    ball.x = table.x + table.w / 2;
+    ball.y = table.y + table.h / 2;
+    ball.vx = 0;
+    ball.vy = 0;
+    charging = false;
+  }
+  resetBtn.addEventListener('click', resetBall);
+
+  function pointerPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * W,
+      y: ((e.clientY - rect.top) / rect.height) * H,
+    };
+  }
+
+  canvas.addEventListener('pointermove', (e) => {
+    const p = pointerPos(e);
+    mouse.x = p.x;
+    mouse.y = p.y;
+    mouse.inside = true;
+  });
+  canvas.addEventListener('pointerleave', () => { mouse.inside = false; });
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (isMoving()) return;
+    canvas.setPointerCapture(e.pointerId);
+    charging = true;
+    chargeStart = performance.now();
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+    if (!charging) return;
+    const t = Math.min(1, (performance.now() - chargeStart) / maxChargeMs);
+    charging = false;
+    shoot(t);
+  });
+
+  function isMoving() {
+    return Math.hypot(ball.vx, ball.vy) > minSpeed;
+  }
+
+  function aimAngle() {
+    // Angle from ball toward mouse; cue is drawn on opposite side, pointing at ball.
+    const dx = mouse.x - ball.x;
+    const dy = mouse.y - ball.y;
+    if (dx === 0 && dy === 0) return 0;
+    return Math.atan2(dy, dx);
+  }
+
+  function shoot(power) {
+    // power: 0..1
+    const angle = aimAngle();
+    const maxSpeed = 14;
+    const speed = Math.max(2, power * maxSpeed);
+    ball.vx = Math.cos(angle) * speed;
+    ball.vy = Math.sin(angle) * speed;
+  }
+
+  function update() {
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+
+    // Collide with rails
+    const left = table.x + ball.r;
+    const right = table.x + table.w - ball.r;
+    const top = table.y + ball.r;
+    const bottom = table.y + table.h - ball.r;
+
+    if (ball.x < left)  { ball.x = left;  ball.vx = -ball.vx * restitution; }
+    if (ball.x > right) { ball.x = right; ball.vx = -ball.vx * restitution; }
+    if (ball.y < top)   { ball.y = top;   ball.vy = -ball.vy * restitution; }
+    if (ball.y > bottom){ ball.y = bottom;ball.vy = -ball.vy * restitution; }
+
+    ball.vx *= friction;
+    ball.vy *= friction;
+    if (Math.abs(ball.vx) < minSpeed) ball.vx = 0;
+    if (Math.abs(ball.vy) < minSpeed) ball.vy = 0;
+  }
+
+  function drawTable() {
+    // Outer rail
+    ctx.fillStyle = railColor;
+    ctx.fillRect(table.x - 18, table.y - 18, table.w + 36, table.h + 36);
+    // Felt
+    ctx.fillStyle = feltColor;
+    ctx.fillRect(table.x, table.y, table.w, table.h);
+    // Inner border line
+    ctx.strokeStyle = '#0f4a22';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(table.x + 1, table.y + 1, table.w - 2, table.h - 2);
+  }
+
+  function drawBall() {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#555';
+    ctx.stroke();
+    // Highlight
+    ctx.beginPath();
+    ctx.arc(ball.x - ball.r * 0.35, ball.y - ball.r * 0.35, ball.r * 0.28, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fill();
+  }
+
+  function drawCue() {
+    if (isMoving() || !mouse.inside) return;
+    const angle = aimAngle();
+
+    // Pull distance grows while charging
+    let pull = cue.gap;
+    if (charging) {
+      const t = Math.min(1, (performance.now() - chargeStart) / maxChargeMs);
+      pull = cue.gap + t * cue.maxPull;
+    }
+
+    // The cue sits on the opposite side of the mouse, so it "points at" the ball.
+    // Tip is near the ball; butt is far away.
+    const tipX = ball.x - Math.cos(angle) * (ball.r + pull);
+    const tipY = ball.y - Math.sin(angle) * (ball.r + pull);
+    const buttX = tipX - Math.cos(angle) * cue.length;
+    const buttY = tipY - Math.sin(angle) * cue.length;
+
+    // Shaft
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = cue.color;
+    ctx.lineWidth = cue.thickness;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(buttX, buttY);
+    ctx.stroke();
+
+    // Tip
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, cue.thickness * 0.75, 0, Math.PI * 2);
+    ctx.fillStyle = cue.tipColor;
+    ctx.fill();
+
+    // Aim guideline while charging
+    if (charging) {
+      ctx.save();
+      ctx.setLineDash([6, 6]);
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(ball.x, ball.y);
+      ctx.lineTo(ball.x + Math.cos(angle) * 120, ball.y + Math.sin(angle) * 120);
+      ctx.stroke();
+      ctx.restore();
+
+      // Power meter
+      const t = Math.min(1, (performance.now() - chargeStart) / maxChargeMs);
+      const meterW = 160, meterH = 10;
+      const mx = (W - meterW) / 2, my = H - 24;
+      ctx.fillStyle = '#ddd';
+      ctx.fillRect(mx, my, meterW, meterH);
+      ctx.fillStyle = t < 0.66 ? '#2ca84a' : (t < 0.9 ? '#e0a84a' : '#d62828');
+      ctx.fillRect(mx, my, meterW * t, meterH);
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(mx + 0.5, my + 0.5, meterW - 1, meterH - 1);
+    }
+  }
+
+  function frame() {
+    update();
+    ctx.clearRect(0, 0, W, H);
+    drawTable();
+    drawBall();
+    drawCue();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
