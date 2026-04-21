@@ -56,7 +56,7 @@
 <div id="wrap">
   <canvas id="c" width="800" height="500"></canvas>
   <div id="hint">Aim with the mouse. Hold to set power (cue pulls back), release to shoot.</div>
-  <button id="reset">Reset Ball</button>
+  <button id="reset">Reset Balls</button>
 </div>
 <script>
 (() => {
@@ -72,14 +72,23 @@
   const railColor = '#6b3a1f';
   const feltColor = '#1f7a3a';
 
-  // Ball
-  const ball = {
-    x: table.x + table.w / 2,
+  // Balls
+  const R = 12;
+  const cueBall = {
+    x: table.x + table.w * 0.25,
     y: table.y + table.h / 2,
-    r: 12,
-    vx: 0,
-    vy: 0,
+    r: R,
+    vx: 0, vy: 0,
+    kind: 'cue',
   };
+  const redBall = {
+    x: table.x + table.w * 0.72,
+    y: table.y + table.h / 2,
+    r: R,
+    vx: 0, vy: 0,
+    kind: 'red',
+  };
+  const balls = [cueBall, redBall];
   const friction = 0.992;
   const minSpeed = 0.04;
   const restitution = 0.96;
@@ -100,10 +109,12 @@
   const maxChargeMs = 900;
 
   function resetBall() {
-    ball.x = table.x + table.w / 2;
-    ball.y = table.y + table.h / 2;
-    ball.vx = 0;
-    ball.vy = 0;
+    cueBall.x = table.x + table.w * 0.25;
+    cueBall.y = table.y + table.h / 2;
+    cueBall.vx = 0; cueBall.vy = 0;
+    redBall.x = table.x + table.w * 0.72;
+    redBall.y = table.y + table.h / 2;
+    redBall.vx = 0; redBall.vy = 0;
     charging = false;
   }
   resetBtn.addEventListener('click', resetBall);
@@ -139,13 +150,16 @@
   });
 
   function isMoving() {
-    return Math.hypot(ball.vx, ball.vy) > minSpeed;
+    for (const b of balls) {
+      if (Math.hypot(b.vx, b.vy) > minSpeed) return true;
+    }
+    return false;
   }
 
   function aimAngle() {
-    // Angle from ball toward mouse; cue is drawn on opposite side, pointing at ball.
-    const dx = mouse.x - ball.x;
-    const dy = mouse.y - ball.y;
+    // Angle from cue ball toward mouse; cue is drawn on opposite side, pointing at cue ball.
+    const dx = mouse.x - cueBall.x;
+    const dy = mouse.y - cueBall.y;
     if (dx === 0 && dy === 0) return 0;
     return Math.atan2(dy, dx);
   }
@@ -155,29 +169,59 @@
     const angle = aimAngle();
     const maxSpeed = 14;
     const speed = Math.max(2, power * maxSpeed);
-    ball.vx = Math.cos(angle) * speed;
-    ball.vy = Math.sin(angle) * speed;
+    cueBall.vx = Math.cos(angle) * speed;
+    cueBall.vy = Math.sin(angle) * speed;
+  }
+
+  function resolveBallCollision(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dist = Math.hypot(dx, dy);
+    const minDist = a.r + b.r;
+    if (dist === 0 || dist >= minDist) return;
+    // Separate so they don't overlap
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const overlap = (minDist - dist) / 2;
+    a.x -= nx * overlap; a.y -= ny * overlap;
+    b.x += nx * overlap; b.y += ny * overlap;
+    // Elastic collision (equal mass): swap velocity components along the normal
+    const va = a.vx * nx + a.vy * ny;
+    const vb = b.vx * nx + b.vy * ny;
+    const diff = (vb - va);
+    a.vx += diff * nx; a.vy += diff * ny;
+    b.vx -= diff * nx; b.vy -= diff * ny;
+    // Small energy loss
+    a.vx *= 0.995; a.vy *= 0.995;
+    b.vx *= 0.995; b.vy *= 0.995;
   }
 
   function update() {
-    ball.x += ball.vx;
-    ball.y += ball.vy;
+    for (const b of balls) {
+      b.x += b.vx;
+      b.y += b.vy;
 
-    // Collide with rails
-    const left = table.x + ball.r;
-    const right = table.x + table.w - ball.r;
-    const top = table.y + ball.r;
-    const bottom = table.y + table.h - ball.r;
+      const left = table.x + b.r;
+      const right = table.x + table.w - b.r;
+      const top = table.y + b.r;
+      const bottom = table.y + table.h - b.r;
+      if (b.x < left)  { b.x = left;   b.vx = -b.vx * restitution; }
+      if (b.x > right) { b.x = right;  b.vx = -b.vx * restitution; }
+      if (b.y < top)   { b.y = top;    b.vy = -b.vy * restitution; }
+      if (b.y > bottom){ b.y = bottom; b.vy = -b.vy * restitution; }
 
-    if (ball.x < left)  { ball.x = left;  ball.vx = -ball.vx * restitution; }
-    if (ball.x > right) { ball.x = right; ball.vx = -ball.vx * restitution; }
-    if (ball.y < top)   { ball.y = top;   ball.vy = -ball.vy * restitution; }
-    if (ball.y > bottom){ ball.y = bottom;ball.vy = -ball.vy * restitution; }
+      b.vx *= friction;
+      b.vy *= friction;
+      if (Math.abs(b.vx) < minSpeed) b.vx = 0;
+      if (Math.abs(b.vy) < minSpeed) b.vy = 0;
+    }
 
-    ball.vx *= friction;
-    ball.vy *= friction;
-    if (Math.abs(ball.vx) < minSpeed) ball.vx = 0;
-    if (Math.abs(ball.vy) < minSpeed) ball.vy = 0;
+    // Ball-to-ball collision
+    for (let i = 0; i < balls.length; i++) {
+      for (let j = i + 1; j < balls.length; j++) {
+        resolveBallCollision(balls[i], balls[j]);
+      }
+    }
   }
 
   function drawTable() {
@@ -193,19 +237,31 @@
     ctx.strokeRect(table.x + 1, table.y + 1, table.w - 2, table.h - 2);
   }
 
-  function drawBall() {
+  function drawBall(b) {
+    const fill = b.kind === 'red' ? '#d62828' : '#ffffff';
     ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
     ctx.fill();
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#555';
+    ctx.strokeStyle = '#333';
     ctx.stroke();
     // Highlight
     ctx.beginPath();
-    ctx.arc(ball.x - ball.r * 0.35, ball.y - ball.r * 0.35, ball.r * 0.28, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.28, 0, Math.PI * 2);
+    ctx.fillStyle = b.kind === 'red' ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.9)';
     ctx.fill();
+    // Red spot on the cue ball
+    if (b.kind === 'cue') {
+      ctx.beginPath();
+      ctx.arc(b.x + b.r * 0.15, b.y + b.r * 0.1, b.r * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = '#d62828';
+      ctx.fill();
+    }
+  }
+
+  function drawBalls() {
+    for (const b of balls) drawBall(b);
   }
 
   function drawCue() {
@@ -219,10 +275,10 @@
       pull = cue.gap + t * cue.maxPull;
     }
 
-    // The cue sits on the opposite side of the mouse, so it "points at" the ball.
+    // The cue sits on the opposite side of the mouse, so it "points at" the cue ball.
     // Tip is near the ball; butt is far away.
-    const tipX = ball.x - Math.cos(angle) * (ball.r + pull);
-    const tipY = ball.y - Math.sin(angle) * (ball.r + pull);
+    const tipX = cueBall.x - Math.cos(angle) * (cueBall.r + pull);
+    const tipY = cueBall.y - Math.sin(angle) * (cueBall.r + pull);
     const buttX = tipX - Math.cos(angle) * cue.length;
     const buttY = tipY - Math.sin(angle) * cue.length;
 
@@ -248,8 +304,8 @@
       ctx.strokeStyle = 'rgba(255,255,255,0.75)';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(ball.x, ball.y);
-      ctx.lineTo(ball.x + Math.cos(angle) * 120, ball.y + Math.sin(angle) * 120);
+      ctx.moveTo(cueBall.x, cueBall.y);
+      ctx.lineTo(cueBall.x + Math.cos(angle) * 120, cueBall.y + Math.sin(angle) * 120);
       ctx.stroke();
       ctx.restore();
 
@@ -271,7 +327,7 @@
     update();
     ctx.clearRect(0, 0, W, H);
     drawTable();
-    drawBall();
+    drawBalls();
     drawCue();
     requestAnimationFrame(frame);
   }
