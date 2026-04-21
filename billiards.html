@@ -74,24 +74,29 @@
 
   // Balls
   const R = 12;
-  const cueBall = {
-    x: table.x + table.w * 0.25,
-    y: table.y + table.h / 2,
-    r: R,
-    vx: 0, vy: 0,
-    kind: 'cue',
+  const startPositions = {
+    cue:    { x: table.x + table.w * 0.22, y: table.y + table.h * 0.50 },
+    red:    { x: table.x + table.w * 0.70, y: table.y + table.h * 0.42 },
+    yellow: { x: table.x + table.w * 0.70, y: table.y + table.h * 0.58 },
   };
-  const redBall = {
-    x: table.x + table.w * 0.72,
-    y: table.y + table.h / 2,
-    r: R,
-    vx: 0, vy: 0,
-    kind: 'red',
-  };
-  const balls = [cueBall, redBall];
+  const cueBall    = { r: R, vx: 0, vy: 0, kind: 'cue',    pocketed: false, ...startPositions.cue };
+  const redBall    = { r: R, vx: 0, vy: 0, kind: 'red',    pocketed: false, ...startPositions.red };
+  const yellowBall = { r: R, vx: 0, vy: 0, kind: 'yellow', pocketed: false, ...startPositions.yellow };
+  const balls = [cueBall, redBall, yellowBall];
   const friction = 0.992;
   const minSpeed = 0.04;
   const restitution = 0.96;
+
+  // Pockets: 4 corners + 2 sides
+  const pocketR = 18;
+  const pockets = [
+    { x: table.x,              y: table.y              },
+    { x: table.x + table.w / 2, y: table.y             },
+    { x: table.x + table.w,    y: table.y              },
+    { x: table.x,              y: table.y + table.h    },
+    { x: table.x + table.w / 2, y: table.y + table.h   },
+    { x: table.x + table.w,    y: table.y + table.h    },
+  ];
 
   // Cue (the long line)
   const cue = {
@@ -109,12 +114,12 @@
   const maxChargeMs = 900;
 
   function resetBall() {
-    cueBall.x = table.x + table.w * 0.25;
-    cueBall.y = table.y + table.h / 2;
-    cueBall.vx = 0; cueBall.vy = 0;
-    redBall.x = table.x + table.w * 0.72;
-    redBall.y = table.y + table.h / 2;
-    redBall.vx = 0; redBall.vy = 0;
+    for (const b of balls) {
+      const p = startPositions[b.kind];
+      b.x = p.x; b.y = p.y;
+      b.vx = 0; b.vy = 0;
+      b.pocketed = false;
+    }
     charging = false;
   }
   resetBtn.addEventListener('click', resetBall);
@@ -151,9 +156,22 @@
 
   function isMoving() {
     for (const b of balls) {
+      if (b.pocketed) continue;
       if (Math.hypot(b.vx, b.vy) > minSpeed) return true;
     }
     return false;
+  }
+
+  function pocketBall(b) {
+    if (b.kind === 'cue') {
+      // Scratch: respawn cue ball at its starting spot.
+      const p = startPositions.cue;
+      b.x = p.x; b.y = p.y;
+      b.vx = 0; b.vy = 0;
+    } else {
+      b.pocketed = true;
+      b.vx = 0; b.vy = 0;
+    }
   }
 
   function aimAngle() {
@@ -174,6 +192,7 @@
   }
 
   function resolveBallCollision(a, b) {
+    if (a.pocketed || b.pocketed) return;
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const dist = Math.hypot(dx, dy);
@@ -198,8 +217,20 @@
 
   function update() {
     for (const b of balls) {
+      if (b.pocketed) continue;
       b.x += b.vx;
       b.y += b.vy;
+
+      // Check pockets first — if ball falls in, skip rail collision.
+      let inPocket = false;
+      for (const p of pockets) {
+        if (Math.hypot(b.x - p.x, b.y - p.y) < pocketR) {
+          pocketBall(b);
+          inPocket = true;
+          break;
+        }
+      }
+      if (inPocket) continue;
 
       const left = table.x + b.r;
       const right = table.x + table.w - b.r;
@@ -237,11 +268,32 @@
     ctx.strokeRect(table.x + 1, table.y + 1, table.w - 2, table.h - 2);
   }
 
+  function drawPockets() {
+    for (const p of pockets) {
+      // Subtle rim
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, pocketR + 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#2a1808';
+      ctx.fill();
+      // Hole
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, pocketR, 0, Math.PI * 2);
+      ctx.fillStyle = '#000000';
+      ctx.fill();
+    }
+  }
+
+  function ballFill(kind) {
+    if (kind === 'red') return '#d62828';
+    if (kind === 'yellow') return '#e6b900';
+    return '#ffffff';
+  }
+
   function drawBall(b) {
-    const fill = b.kind === 'red' ? '#d62828' : '#ffffff';
+    if (b.pocketed) return;
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-    ctx.fillStyle = fill;
+    ctx.fillStyle = ballFill(b.kind);
     ctx.fill();
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = '#333';
@@ -249,7 +301,7 @@
     // Highlight
     ctx.beginPath();
     ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.28, 0, Math.PI * 2);
-    ctx.fillStyle = b.kind === 'red' ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.9)';
+    ctx.fillStyle = b.kind === 'cue' ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)';
     ctx.fill();
     // Red spot on the cue ball
     if (b.kind === 'cue') {
@@ -327,6 +379,7 @@
     update();
     ctx.clearRect(0, 0, W, H);
     drawTable();
+    drawPockets();
     drawBalls();
     drawCue();
     requestAnimationFrame(frame);
