@@ -321,7 +321,70 @@
 
   let groundY = Math.floor(H * 0.6);
   const groundMin = 13;
-  const groundMax = H - 1;
+  let groundMax = H - 1;
+
+  // ---- Tree (Level 2) ----
+  const BRANCH_Y = 100;
+  const TREE_APPEAR_AT = 30000;
+  const LEVEL_UP_SCORE = 25;
+
+  // Tree geometry
+  const TREE = {
+    trunkX1: 115, trunkX2: 123, trunkY1: 35, trunkY2: 140,
+    branchX1: 40, branchX2: 200, branchY: BRANCH_Y,
+  };
+
+  function drawTree() {
+    const brown = '#6a3d1e';
+    const brownDark = '#3d2410';
+    const green = '#5a8c3a';
+    const greenL = '#7ab452';
+
+    // Trunk (cols 117..120, rows 35..140)
+    for (let y = 35; y <= 140; y++) {
+      px(117, y, brown);
+      px(118, y, brown);
+      px(119, y, brown);
+      px(120, y, brownDark);
+    }
+    // bark detail
+    px(117, 55, brownDark); px(120, 70, brown);
+    px(117, 88, brownDark); px(120, 115, brown);
+
+    // Main horizontal branch
+    for (let x = 40; x <= 200; x++) px(x, BRANCH_Y, brown);
+    for (let x = 41; x <= 199; x++) px(x, BRANCH_Y + 1, brownDark);
+    // Branch tips taper
+    px(40, BRANCH_Y - 1, brown);
+    px(200, BRANCH_Y - 1, brown);
+
+    // Upper small branches/twigs
+    px(118, 30, brown); px(118, 29, brown);
+    px(119, 28, brown); px(120, 27, brown); px(121, 26, brown);
+    px(115, 40, brown); px(113, 41, brown);
+    px(122, 48, brown); px(124, 47, brown); px(126, 46, brown);
+    px(116, 60, brown); px(114, 61, brown);
+
+    // A few leaves (very little green)
+    px(125, 45, green); px(126, 45, greenL); px(127, 44, green);
+    px(112, 40, green); px(111, 40, greenL);
+    px(121, 25, green); px(122, 25, greenL);
+  }
+
+  function overlapsTree(x, y, w, h) {
+    // Trunk box
+    if (x + w > TREE.trunkX1 - 1 && x < TREE.trunkX2 + 2 &&
+        y + h > TREE.trunkY1 - 1 && y < TREE.trunkY2 + 2) return true;
+    // Main branch strip
+    if (x + w > TREE.branchX1 - 1 && x < TREE.branchX2 + 2 &&
+        y + h > TREE.branchY - 1 && y < TREE.branchY + 3) return true;
+    return false;
+  }
+
+  function faceTouchesTree(fx, fy, fw, fh) {
+    return fx + fw > TREE.trunkX1 && fx < TREE.trunkX2 + 1 &&
+           fy + fh > TREE.trunkY1 && fy < TREE.trunkY2 + 1;
+  }
 
   const rabbits = [];
   const MAX_RABBITS = 3;
@@ -332,9 +395,15 @@
   let score = 0;
   let spawnTimer = 0;
   let nextSpawn = 500 + Math.random() * 900;
-  let gameState = 'playing';
+  let gameState = 'playing'; // 'playing' | 'intermission' | 'over'
   let timeLeft = GAME_DURATION;
   let lastTickSecond = -1;
+
+  // Level state
+  let level = 1;
+  let facing = 'left';
+  let onBranch = false;
+  let treeActive = false;
 
   // Stats / combo
   let caughtCount = 0;
@@ -354,8 +423,14 @@
   ];
 
   function spawnRabbit(type) {
-    const x = 4 + Math.floor(Math.random() * (W - RW - 8));
-    const y = 4 + Math.floor(Math.random() * (H - RH - 8));
+    let x = 0, y = 0;
+    let tries = 0;
+    do {
+      x = 4 + Math.floor(Math.random() * (W - RW - 8));
+      y = 4 + Math.floor(Math.random() * (H - RH - 8));
+      tries++;
+    } while (treeActive && overlapsTree(x, y, RW, RH) && tries < 20);
+    if (treeActive && overlapsTree(x, y, RW, RH)) return; // skip spawn if no valid spot
     const isGold = type === 'gold';
     rabbits.push({
       x, y,
@@ -379,8 +454,8 @@
         }
       }
     }
-    // Face-only hitbox: snout/head of the leopard (~5x5)
-    const fx = pos + 0;
+    // Face-only hitbox: snout/head (~5x5), follows facing direction
+    const fx = facing === 'left' ? pos : pos + 19;
     const fy = groundY - 12 + 3;
     const fw = 5;
     const fh = 5;
@@ -411,6 +486,20 @@
     }
     if (gameState === 'playing') {
       const elapsed = GAME_DURATION - timeLeft;
+      // Activate tree at 30s in Level 2
+      if (level === 2 && !treeActive && elapsed >= TREE_APPEAR_AT) {
+        treeActive = true;
+        playSparkle();
+      }
+      // Tree jump trigger: face hits trunk
+      if (treeActive && !onBranch && faceTouchesTree(fx, fy, fw, fh)) {
+        onBranch = true;
+        groundMax = BRANCH_Y;
+        groundY = BRANCH_Y;
+        walking = true;
+        playSparkle();
+        showPopup(pos + 12, groundY - 14, 'UP!', true);
+      }
       for (const g of goldSchedule) {
         if (!g.spawned && elapsed >= g.at) {
           g.spawned = true;
@@ -459,6 +548,8 @@
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
+    if (treeActive) drawTree();
+
     for (const r of rabbits) {
       if (r.caught != null) {
         const t = Math.min(1, (now - r.caught) / CAUGHT_DURATION);
@@ -466,10 +557,8 @@
       } else {
         const age = now - r.born;
         const remaining = (r.life || RABBIT_LIFE) - age;
-        // Hop animation
         const hop = Math.abs(Math.sin(age / 180)) * 2;
         const dy = -Math.round(hop);
-        // Flicker in final 1s
         if (remaining < 1000) {
           const phase = Math.floor(age / 90) % 2;
           if (phase === 0) continue;
@@ -479,7 +568,17 @@
     }
 
     const bob = standing ? 0 : (frame === 0 ? 0 : -1);
-    drawLeopard(Math.floor(x), groundY - 12 + bob, frame, standing);
+    const oy = groundY - 12 + bob;
+    const ox = Math.floor(x);
+    if (facing === 'right') {
+      ctx.save();
+      ctx.translate(ox * 2 + 22, 0);
+      ctx.scale(-1, 1);
+      drawLeopard(ox, oy, frame, standing);
+      ctx.restore();
+    } else {
+      drawLeopard(ox, oy, frame, standing);
+    }
   }
 
   function pointerToCanvas(clientX, clientY) {
@@ -540,7 +639,19 @@
       canvas.releasePointerCapture(e.pointerId);
     }
     if (downOnLeopard && !didDrag) {
-      walking = !walking;
+      // When on branch, rear half = flip direction; front half = toggle walk
+      if (onBranch) {
+        const rel = downX - pos; // 0..23 roughly
+        const isRearHalf = facing === 'left' ? (rel >= 12) : (rel <= 11);
+        if (isRearHalf) {
+          facing = (facing === 'left') ? 'right' : 'left';
+          walking = true;
+        } else {
+          walking = !walking;
+        }
+      } else {
+        walking = !walking;
+      }
     }
     downOnLeopard = false;
     dragOffset = 0;
@@ -548,10 +659,49 @@
   canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
   canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
+  const overTitleEl = document.getElementById('overTitle');
+  const overHintEl = document.querySelector('#overlay .hint');
+
   overlay.addEventListener('click', () => {
     initAudio();
-    resetGame();
+    if (gameState === 'intermission') startLevel2();
+    else resetGame();
   });
+
+  function endLevel1() {
+    if (score >= LEVEL_UP_SCORE) {
+      gameState = 'intermission';
+      walking = false;
+      overTitleEl.textContent = 'LEVEL 2!';
+      overScoreEl.textContent = 'Score: ' + score;
+      overStatsEl.textContent = 'Next: a tree appears at 30s · tap the rear to flip direction';
+      overHintEl.textContent = 'Tap to continue';
+      overlay.classList.add('show');
+      timerEl.classList.remove('urgent');
+    } else {
+      endGame();
+    }
+  }
+
+  function startLevel2() {
+    level = 2;
+    timeLeft = GAME_DURATION;
+    rabbits.length = 0;
+    spawnTimer = 0;
+    nextSpawn = 500 + Math.random() * 900;
+    for (const g of goldSchedule) g.spawned = false;
+    treeActive = false;
+    onBranch = false;
+    facing = 'left';
+    groundMax = H - 1;
+    pos = W;
+    walking = true;
+    gameState = 'playing';
+    lastTickSecond = -1;
+    titleEl.textContent = 'RABBIT HUNT · L2';
+    overlay.classList.remove('show');
+    updateHud();
+  }
 
   function endGame() {
     gameState = 'over';
@@ -562,8 +712,10 @@
       try { localStorage.setItem('rabbitHuntBest', String(bestScore)); } catch (e) {}
       newBest = true;
     }
+    overTitleEl.textContent = "Time's up!";
     overScoreEl.textContent = 'Score: ' + score + (newBest ? '  🏆 NEW BEST!' : '');
     overStatsEl.textContent = 'Caught: ' + caughtCount + ' · Missed: ' + missedCount + ' · Best streak: ' + bestStreak;
+    overHintEl.textContent = 'Tap to play again';
     overlay.classList.add('show');
     timerEl.classList.remove('urgent');
   }
@@ -575,6 +727,11 @@
     spawnTimer = 0;
     nextSpawn = 500 + Math.random() * 900;
     for (const g of goldSchedule) g.spawned = false;
+    level = 1;
+    facing = 'left';
+    onBranch = false;
+    treeActive = false;
+    groundMax = H - 1;
     pos = W;
     walking = true;
     gameState = 'playing';
@@ -584,6 +741,7 @@
     bestStreak = 0;
     lastCatchTime = -Infinity;
     lastTickSecond = -1;
+    titleEl.textContent = 'RABBIT HUNT';
     overlay.classList.remove('show');
     updateHud();
   }
@@ -604,13 +762,16 @@
       timeLeft -= dt;
       if (timeLeft <= 0) {
         timeLeft = 0;
-        endGame();
+        if (level === 1) endLevel1();
+        else endGame();
       }
     }
 
     if (walking && gameState === 'playing') {
-      pos -= speed * (dt / 16.667);
+      const dir = (facing === 'left') ? -1 : 1;
+      pos += dir * speed * (dt / 16.667);
       if (pos < -26) pos = W + 4;
+      if (pos > W + 4) pos = -26;
       frameTimer += dt;
       if (frameTimer >= frameInterval) {
         frameTimer -= frameInterval;
