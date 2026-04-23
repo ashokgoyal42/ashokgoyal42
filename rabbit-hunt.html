@@ -326,7 +326,8 @@
   // ---- Tree (Level 2) ----
   const BRANCH_Y = 100;
   const TREE_APPEAR_AT = 30000;
-  const LEVEL_UP_SCORE = 20;
+  const LEVEL_2_SCORE = 20;
+  const LEVEL_3_SCORE = 50;
 
   // Tree geometry (squat, bushy, wide)
   const TREE = {
@@ -584,6 +585,49 @@
     });
   }
 
+  function pickHopTarget(r) {
+    const maxHop = 22;
+    for (let tries = 0; tries < 8; tries++) {
+      const dx = (Math.random() - 0.5) * 2 * maxHop;
+      const dy = (Math.random() - 0.5) * 2 * maxHop;
+      const nx = Math.max(4, Math.min(W - RW - 4, Math.round(r.x + dx)));
+      const ny = Math.max(4, Math.min(H - RH - 4, Math.round(r.y + dy)));
+      if (!(treeActive && overlapsTree(nx, ny, RW, RH))) return { x: nx, y: ny };
+    }
+    return { x: r.x, y: r.y };
+  }
+
+  function updateHopping(r, now) {
+    if (r.caught != null) return;
+    if (!r.hopTo) {
+      r.hopFrom = { x: r.x, y: r.y };
+      r.hopTo = pickHopTarget(r);
+      r.hopStart = now + Math.random() * 400;
+      r.hopDuration = 280 + Math.random() * 120;
+      r.hopRest = 500 + Math.random() * 700;
+      r.hopArc = 0;
+      return;
+    }
+    const elapsed = now - r.hopStart;
+    if (elapsed < 0) return; // waiting to start first hop
+    if (elapsed < r.hopDuration) {
+      const t = elapsed / r.hopDuration;
+      r.x = Math.round(r.hopFrom.x + (r.hopTo.x - r.hopFrom.x) * t);
+      r.y = Math.round(r.hopFrom.y + (r.hopTo.y - r.hopFrom.y) * t);
+      r.hopArc = Math.sin(t * Math.PI) * 4;
+    } else if (elapsed < r.hopDuration + r.hopRest) {
+      r.x = r.hopTo.x;
+      r.y = r.hopTo.y;
+      r.hopArc = 0;
+    } else {
+      r.hopFrom = { x: r.hopTo.x, y: r.hopTo.y };
+      r.hopTo = pickHopTarget(r);
+      r.hopStart = now;
+      r.hopDuration = 280 + Math.random() * 120;
+      r.hopRest = 500 + Math.random() * 700;
+    }
+  }
+
   function updateRabbits(dt, now) {
     for (let i = rabbits.length - 1; i >= 0; i--) {
       const r = rabbits[i];
@@ -596,6 +640,10 @@
           combo = 0;
         }
       }
+    }
+    // Hopping (Level 3+)
+    if (level >= 3) {
+      for (const r of rabbits) updateHopping(r, now);
     }
     // Face-only hitbox: snout/head (~5x5), follows facing direction
     const fx = facing === 'left' ? pos : pos + 19;
@@ -700,8 +748,9 @@
       } else {
         const age = now - r.born;
         const remaining = (r.life || RABBIT_LIFE) - age;
-        const hop = Math.abs(Math.sin(age / 180)) * 2;
-        const dy = -Math.round(hop);
+        let hopY = Math.abs(Math.sin(age / 180)) * 2;
+        if (level === 3 && r.hopArc) hopY = r.hopArc;
+        const dy = -Math.round(hopY);
         if (remaining < 1000) {
           const phase = Math.floor(age / 90) % 2;
           if (phase === 0) continue;
@@ -782,9 +831,10 @@
       canvas.releasePointerCapture(e.pointerId);
     }
     if (downOnLeopard && !didDrag) {
-      // When on branch, rear half = flip direction; front half = toggle walk
-      if (onBranch) {
-        const rel = downX - pos; // 0..23 roughly
+      // Rear half = flip direction (enabled on branch in L2, always in L3+)
+      const canFlip = onBranch || level >= 3;
+      if (canFlip) {
+        const rel = downX - pos;
         const isRearHalf = facing === 'left' ? (rel >= 12) : (rel <= 11);
         if (isRearHalf) {
           facing = (facing === 'left') ? 'right' : 'left';
@@ -805,15 +855,22 @@
   const overTitleEl = document.getElementById('overTitle');
   const overHintEl = document.querySelector('#overlay .hint');
 
+  let pendingNextLevel = null;
+
   overlay.addEventListener('click', () => {
     initAudio();
-    if (gameState === 'intermission') startLevel2();
-    else resetGame();
+    if (gameState === 'intermission') {
+      if (pendingNextLevel === 2) startLevel2();
+      else if (pendingNextLevel === 3) startLevel3();
+    } else {
+      resetGame();
+    }
   });
 
   function endLevel1() {
-    if (score >= LEVEL_UP_SCORE) {
+    if (score >= LEVEL_2_SCORE) {
       gameState = 'intermission';
+      pendingNextLevel = 2;
       walking = false;
       overTitleEl.textContent = 'LEVEL 2!';
       overScoreEl.textContent = 'Score: ' + score;
@@ -826,8 +883,25 @@
     }
   }
 
+  function endLevel2() {
+    if (score >= LEVEL_3_SCORE) {
+      gameState = 'intermission';
+      pendingNextLevel = 3;
+      walking = false;
+      overTitleEl.textContent = 'LEVEL 3!';
+      overScoreEl.textContent = 'Score: ' + score;
+      overStatsEl.textContent = 'Next: the rabbits hop around · tap the rear to flip direction anytime';
+      overHintEl.textContent = 'Tap to continue';
+      overlay.classList.add('show');
+      timerEl.classList.remove('urgent');
+    } else {
+      endGame();
+    }
+  }
+
   function startLevel2() {
     level = 2;
+    pendingNextLevel = null;
     timeLeft = GAME_DURATION;
     rabbits.length = 0;
     spawnTimer = 0;
@@ -842,6 +916,27 @@
     gameState = 'playing';
     lastTickSecond = -1;
     titleEl.textContent = 'RABBIT HUNT · L2';
+    overlay.classList.remove('show');
+    updateHud();
+  }
+
+  function startLevel3() {
+    level = 3;
+    pendingNextLevel = null;
+    timeLeft = GAME_DURATION;
+    rabbits.length = 0;
+    spawnTimer = 0;
+    nextSpawn = 500 + Math.random() * 900;
+    for (const g of goldSchedule) g.spawned = false;
+    treeActive = false;
+    onBranch = false;
+    facing = 'left';
+    groundMax = H - 1;
+    pos = W;
+    walking = true;
+    gameState = 'playing';
+    lastTickSecond = -1;
+    titleEl.textContent = 'RABBIT HUNT · L3';
     overlay.classList.remove('show');
     updateHud();
   }
@@ -871,6 +966,7 @@
     nextSpawn = 500 + Math.random() * 900;
     for (const g of goldSchedule) g.spawned = false;
     level = 1;
+    pendingNextLevel = null;
     facing = 'left';
     onBranch = false;
     treeActive = false;
@@ -906,6 +1002,7 @@
       if (timeLeft <= 0) {
         timeLeft = 0;
         if (level === 1) endLevel1();
+        else if (level === 2) endLevel2();
         else endGame();
       }
     }
