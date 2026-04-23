@@ -174,10 +174,12 @@
     court.net = court.y + court.h / 2;
     // clamp racket positions on resize
     if (state) {
-      state.player.y = court.y + court.h - 36;
       state.cpu.y = court.y + 36;
-      state.player.x = clamp(state.player.x, court.x + RACKET_W / 2, court.x + court.w - RACKET_W / 2);
-      state.cpu.x = clamp(state.cpu.x, court.x + RACKET_W / 2, court.x + court.w - RACKET_W / 2);
+      const rxMin = court.x + RACKET_W / 2;
+      const rxMax = court.x + court.w - RACKET_W / 2;
+      state.player.x = clamp(state.player.x, rxMin, rxMax);
+      state.cpu.x = clamp(state.cpu.x, rxMin, rxMax);
+      state.player.y = clamp(state.player.y, court.net + 12, court.y + court.h - 8);
       if (!state.ball.live) resetServe(score.server);
     }
   }
@@ -306,8 +308,8 @@
   }
 
   const state = {
-    player: { x: 220, y: 700, vx: 0 },
-    cpu:    { x: 220, y: 80,  vx: 0 },
+    player: { x: 220, y: 700, vx: 0, vy: 0 },
+    cpu:    { x: 220, y: 80,  vx: 0, vy: 0 },
     ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0 },
     pointer: { x: 220, y: 700, vx: 0, vy: 0, lastT: 0, active: false },
     tPrev:  performance.now(),
@@ -416,14 +418,25 @@
     state.tPrev = now;
     const dt = dtMs / 16.67;
 
-    // player racket
-    const targetX = state.pointer.active ? state.pointer.x : state.player.x;
-    const prevX = state.player.x;
-    state.player.x += (targetX - state.player.x) * Math.min(1, 0.6 * dt);
-    state.player.x = clamp(state.player.x, court.x + RACKET_W / 2, court.x + court.w - RACKET_W / 2);
-    state.player.vx = (state.player.x - prevX) / Math.max(dt, 0.001);
+    // Player legal area: anywhere in their half, between the net and the baseline.
+    const playerYMin = court.net + 12;
+    const playerYMax = court.y + court.h - 8;
+    const rxMin = court.x + RACKET_W / 2;
+    const rxMax = court.x + court.w - RACKET_W / 2;
 
-    // CPU AI
+    // Player racket follows the pointer in 2D within the legal area.
+    const targetX = state.pointer.active ? state.pointer.x : state.player.x;
+    const targetY = state.pointer.active ? state.pointer.y : state.player.y;
+    const prevPX = state.player.x;
+    const prevPY = state.player.y;
+    state.player.x += (targetX - state.player.x) * Math.min(1, 0.6 * dt);
+    state.player.y += (targetY - state.player.y) * Math.min(1, 0.6 * dt);
+    state.player.x = clamp(state.player.x, rxMin, rxMax);
+    state.player.y = clamp(state.player.y, playerYMin, playerYMax);
+    state.player.vx = (state.player.x - prevPX) / Math.max(dt, 0.001);
+    state.player.vy = (state.player.y - prevPY) / Math.max(dt, 0.001);
+
+    // CPU AI (stays at its baseline for now; step 3 will flesh out legal serves).
     const eff = state.efficiency;
     const ball = state.ball;
     let cpuTarget = state.cpu.x;
@@ -432,11 +445,11 @@
       cpuTarget = ball.x + ball.vx * t;
       cpuTarget += (Math.random() - 0.5) * (1 - eff) * 160;
     }
-    const cpuPrev = state.cpu.x;
+    const cpuPrevX = state.cpu.x;
     const cpuLerp = 0.03 + eff * 0.22;
     state.cpu.x += (cpuTarget - state.cpu.x) * Math.min(1, cpuLerp * dt);
-    state.cpu.x = clamp(state.cpu.x, court.x + RACKET_W / 2, court.x + court.w - RACKET_W / 2);
-    state.cpu.vx = (state.cpu.x - cpuPrev) / Math.max(dt, 0.001);
+    state.cpu.x = clamp(state.cpu.x, rxMin, rxMax);
+    state.cpu.vx = (state.cpu.x - cpuPrevX) / Math.max(dt, 0.001);
 
     if (ball.live) {
       const prevY = ball.y;
@@ -446,12 +459,18 @@
       ball.vy *= Math.pow(0.9995, dt);
 
       // --- racket collisions ---
-      // player (bottom)
-      if (ball.live && ball.vy > 0 && ball.y >= state.player.y - RACKET_H && ball.y <= state.player.y + 4) {
-        if (Math.abs(ball.x - state.player.x) < RACKET_W / 2 + 2) {
+      // player (bottom): swept check — the racket itself may have moved during the frame
+      if (ball.live && ball.vy > 0) {
+        const rYmin = Math.min(prevPY, state.player.y) - RACKET_H;
+        const rYmax = Math.max(prevPY, state.player.y) + 4;
+        const bYmin = Math.min(prevY, ball.y);
+        const bYmax = Math.max(prevY, ball.y);
+        const yHit = !(bYmax < rYmin || bYmin > rYmax);
+        const xHit = Math.abs(ball.x - state.player.x) < RACKET_W / 2 + 2;
+        if (yHit && xHit) {
           ball.y = state.player.y - RACKET_H;
           const base = -(Math.max(0.6, Math.abs(ball.vy))) - 0.1;
-          // swipe up (vy<0) adds forward power; swipe down weakens shot.
+          // Swipe up (vy<0) adds forward power; swipe down weakens the shot.
           ball.vy = clamp(base + state.pointer.vy * 0.45, -3.2, -0.05);
           ball.vx = clamp(state.pointer.vx * 0.45 + state.player.vx * 0.25, -2.8, 2.8);
           ball.owner = 'cpu';
