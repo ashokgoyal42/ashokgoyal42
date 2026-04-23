@@ -175,11 +175,45 @@
     o.start(t);
     o.stop(t + dur + 0.02);
   }
-  function playPop() { tone(880, 0.14, 'triangle', 0.18, 220); }
+  function playPop(comboN) {
+    const c = Math.max(1, comboN || 1);
+    const base = 720 + Math.min(c - 1, 8) * 90;
+    tone(base, 0.13, 'triangle', 0.17, base * 0.3);
+  }
   function playSparkle() {
     [880, 1320, 1760].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'sine', 0.16), i * 60));
   }
   function playTick() { tone(1400, 0.04, 'square', 0.07); }
+  function playEscape() {
+    // Little "aww" as a rabbit gets away
+    tone(540, 0.22, 'triangle', 0.12, 300);
+  }
+  function playFlip() {
+    tone(1100, 0.07, 'square', 0.10, 1700);
+  }
+  function playJump() {
+    tone(360, 0.07, 'sine', 0.14, 900);
+    setTimeout(() => tone(920, 0.11, 'sine', 0.14, 1500), 45);
+  }
+  function playFanfare() {
+    // Cheerful ascending arpeggio for level-up / new best
+    const notes = [523, 659, 784, 1046, 1319];
+    notes.forEach((f, i) => setTimeout(() => tone(f, 0.22, 'triangle', 0.18), i * 85));
+  }
+  function playGameOver() {
+    // Descending "game over" theme
+    const notes = [440, 392, 330, 262];
+    notes.forEach((f, i) => setTimeout(() => tone(f, 0.24, 'triangle', 0.16), i * 130));
+  }
+  function playStart() {
+    // Quick start chirp
+    tone(660, 0.08, 'triangle', 0.15, 990);
+    setTimeout(() => tone(990, 0.1, 'triangle', 0.15), 90);
+  }
+  function playGoldAppear() {
+    tone(1760, 0.06, 'sine', 0.10);
+    setTimeout(() => tone(2200, 0.08, 'sine', 0.10), 40);
+  }
 
   // ---- Floating score popups (HTML overlays for sharp text) ----
   function showPopup(canvasX, canvasY, text, gold) {
@@ -763,6 +797,7 @@
         if (gameState === 'playing') {
           missedCount++;
           combo = 0;
+          playEscape();
         }
       }
     }
@@ -797,7 +832,7 @@
           playSparkle();
         } else {
           showPopup(cx, cy, '+' + total + (bonus > 0 ? ' x' + combo + '!' : ''), false);
-          playPop();
+          playPop(combo);
         }
       }
     }
@@ -820,7 +855,7 @@
         for (let i = rabbits.length - 1; i >= 0; i--) {
           if (rabbits[i].caught == null) rabbits.splice(i, 1);
         }
-        playSparkle();
+        playJump();
         showPopup(pos + 12, groundY - 14, 'UP!', true);
       }
 
@@ -838,6 +873,7 @@
           if (!g.spawned && elapsed >= g.at) {
             g.spawned = true;
             spawnRabbit('gold');
+            playGoldAppear();
           }
         }
         spawnTimer += dt;
@@ -994,6 +1030,7 @@
         if (isRearHalf) {
           facing = (facing === 'left') ? 'right' : 'left';
           walking = true;
+          playFlip();
         } else {
           walking = !walking;
         }
@@ -1034,6 +1071,7 @@
       overHintEl.textContent = 'Tap to continue';
       overlay.classList.add('show');
       timerEl.classList.remove('urgent');
+      playFanfare();
     } else {
       endGame();
     }
@@ -1050,6 +1088,7 @@
       overHintEl.textContent = 'Tap to continue';
       overlay.classList.add('show');
       timerEl.classList.remove('urgent');
+      playFanfare();
     } else {
       endGame();
     }
@@ -1066,6 +1105,7 @@
       overHintEl.textContent = 'Tap to continue';
       overlay.classList.add('show');
       timerEl.classList.remove('urgent');
+      playFanfare();
     } else {
       endGame();
     }
@@ -1092,6 +1132,7 @@
     titleEl.textContent = 'RABBIT HUNT · L2';
     overlay.classList.remove('show');
     updateHud();
+    playStart();
   }
 
   function startLevel3() {
@@ -1115,6 +1156,7 @@
     titleEl.textContent = 'RABBIT HUNT · L3';
     overlay.classList.remove('show');
     updateHud();
+    playStart();
   }
 
   function startLevel4() {
@@ -1140,6 +1182,7 @@
     titleEl.textContent = 'RABBIT HUNT · L4';
     overlay.classList.remove('show');
     updateHud();
+    playStart();
   }
 
   function endGame() {
@@ -1157,6 +1200,8 @@
     overHintEl.textContent = 'Tap to play again';
     overlay.classList.add('show');
     timerEl.classList.remove('urgent');
+    if (newBest) playFanfare();
+    else playGameOver();
   }
 
   function resetGame() {
@@ -1189,6 +1234,7 @@
     titleEl.textContent = 'RABBIT HUNT';
     overlay.classList.remove('show');
     updateHud();
+    playStart();
   }
 
   let pos = W;
