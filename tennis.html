@@ -184,7 +184,6 @@
 
   const RACKET_W = 44;
   const RACKET_H = 4;
-  const CURSOR_TAIL = 10;
 
   // --- Tennis scoring state ---
   const score = {
@@ -311,11 +310,8 @@
     cpu:    { x: 220, y: 80,  vx: 0 },
     ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0 },
     pointer: { x: 220, y: 700, vx: 0, vy: 0, lastT: 0, active: false },
-    blink:  0,
     tPrev:  performance.now(),
     efficiency: parseFloat(diffEl.value),
-    wake: { player: 0, cpu: 0 },
-    flash: 0,
     autoServeT: null,
   };
 
@@ -354,8 +350,6 @@
     state.ball.live = true;
     state.ball.prevY = state.ball.y;
     score.message = '';
-    state.wake.player = 60;
-    state.wake.cpu = 60;
   }
   serveBtn.addEventListener('click', () => {
     ensureAudio();
@@ -391,7 +385,6 @@
     state.pointer.y = p.y;
     state.pointer.lastT = now;
     state.pointer.active = true;
-    state.wake.player = Math.max(state.wake.player, 30);
   }
   function onPointerDown(e) {
     ensureAudio();
@@ -402,7 +395,6 @@
     state.pointer.vx = 0;
     state.pointer.vy = 0;
     state.pointer.active = true;
-    state.wake.player = Math.max(state.wake.player, 60);
     if (score.matchOver) { newMatch(); return; }
     if (!state.ball.live && state.ball.owner === 'player') serve();
   }
@@ -423,10 +415,6 @@
     const dtMs = Math.min(50, now - state.tPrev);
     state.tPrev = now;
     const dt = dtMs / 16.67;
-    state.blink += dtMs;
-    state.wake.player = Math.max(0, state.wake.player - dt);
-    state.wake.cpu = Math.max(0, state.wake.cpu - dt);
-    if (state.flash > 0) state.flash -= dt;
 
     // player racket
     const targetX = state.pointer.active ? state.pointer.x : state.player.x;
@@ -467,8 +455,6 @@
           ball.vy = clamp(base + state.pointer.vy * 0.45, -3.2, -0.05);
           ball.vx = clamp(state.pointer.vx * 0.45 + state.player.vx * 0.25, -2.8, 2.8);
           ball.owner = 'cpu';
-          state.wake.player = 90;
-          state.flash = 6;
           SND.hitP();
         }
       }
@@ -482,8 +468,6 @@
             const aim = (state.player.x > (court.x + court.w / 2) ? -1 : 1) * eff * 1.0;
             ball.vx = clamp(aim + state.cpu.vx * 0.35 + (Math.random() - 0.5) * (1 - eff) * 0.8, -2.6, 2.6);
             ball.owner = 'player';
-            state.wake.cpu = 90;
-            state.flash = 6;
             SND.hitC();
           }
         }
@@ -562,8 +546,8 @@
     ctx.stroke();
     ctx.restore();
 
-    drawCursorRacket(state.cpu.x, state.cpu.y, state.wake.cpu);
-    drawCursorRacket(state.player.x, state.player.y, state.wake.player || (state.pointer.active ? 30 : 0));
+    drawRacket(state.cpu.x, state.cpu.y);
+    drawRacket(state.player.x, state.player.y);
 
     // server indicator: small dot just outside the court beside the server's racket
     {
@@ -593,13 +577,6 @@
       ctx.fillText(score.message, W / 2, court.net - 8);
     }
 
-    if (state.flash > 0) {
-      ctx.globalAlpha = Math.min(0.15, state.flash / 40);
-      ctx.fillStyle = '#111';
-      ctx.fillRect(court.x, court.y, court.w, court.h);
-      ctx.globalAlpha = 1;
-    }
-
     if (score.matchOver) {
       ctx.globalAlpha = 0.9;
       ctx.fillStyle = '#fff';
@@ -617,34 +594,9 @@
     }
   }
 
-  // Wakefulness controls the caret: asleep = slow blink, single thin bar;
-  // waking = solid; full wake = double bar that blinks fast.
-  function drawCursorRacket(cx, cy, wake) {
+  function drawRacket(cx, cy) {
     ctx.fillStyle = '#111';
     ctx.fillRect(Math.round(cx - RACKET_W / 2), Math.round(cy - RACKET_H / 2), RACKET_W, RACKET_H);
-
-    let period, duty, doubled;
-    if (wake <= 0) {
-      period = 1100; duty = 0.55; doubled = false;          // asleep: slow, single
-    } else if (wake < 30) {
-      period = 700;  duty = 0.75; doubled = false;          // waking: medium, single
-    } else {
-      period = 260;  duty = 0.85; doubled = true;           // awake: fast, double
-    }
-    const on = (state.blink % period) < period * duty;
-    if (!on) return;
-
-    const baseX = Math.round(cx) - 1;
-    const topY  = Math.round(cy - RACKET_H / 2 - CURSOR_TAIL);
-    const botY  = Math.round(cy + RACKET_H / 2);
-    ctx.fillRect(baseX, topY, 2, CURSOR_TAIL);
-    ctx.fillRect(baseX, botY, 2, CURSOR_TAIL);
-    if (doubled) {
-      ctx.fillRect(baseX - 4, topY + 2, 2, CURSOR_TAIL - 2);
-      ctx.fillRect(baseX + 4, topY + 2, 2, CURSOR_TAIL - 2);
-      ctx.fillRect(baseX - 4, botY,     2, CURSOR_TAIL - 2);
-      ctx.fillRect(baseX + 4, botY,     2, CURSOR_TAIL - 2);
-    }
   }
 
   // init
