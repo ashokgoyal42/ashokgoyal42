@@ -328,106 +328,204 @@
   const TREE_APPEAR_AT = 30000;
   const LEVEL_UP_SCORE = 20;
 
-  // Tree geometry (wider bbox since trunk twists)
+  // Tree geometry (squat, bushy, wide)
   const TREE = {
-    trunkX1: 108, trunkX2: 132, trunkY1: 25, trunkY2: 145,
-    branchX1: 38, branchX2: 202, branchY: BRANCH_Y,
+    trunkX1: 106, trunkX2: 134, trunkY1: 30, trunkY2: 150,
+    branchX1: 30, branchX2: 210, branchY: BRANCH_Y,
   };
 
-  function drawTree() {
-    const bark = '#5a3a1c';
-    const barkDark = '#3a2410';
-    const barkLight = '#8a6942';
-    const dryGreen = '#667a30';
+  function line(x0, y0, x1, y1, col) {
+    let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+    let sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+    let x = x0, y = y0;
+    while (true) {
+      px(x, y, col);
+      if (x === x1 && y === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x += sx; }
+      if (e2 < dx) { err += dx; y += sy; }
+    }
+  }
 
-    // Twisted dead trunk (sine-curved, tapering up)
-    for (let y = 145; y >= 25; y--) {
-      const t = (145 - y) / 120;
-      const cx = 119 + Math.sin(t * 7.0) * 5 + Math.sin(t * 2.3) * 3;
-      const w = Math.max(2, Math.round(4 - t * 2));
+  function drawTree() {
+    const bark = '#6a4428';
+    const barkD = '#3a2410';
+    const barkL = '#8c6442';
+
+    // ---- Thick, squat, twisted trunk base (y=150 -> 108) ----
+    for (let y = 150; y >= 108; y--) {
+      const t = (150 - y) / 42; // 0 at base, 1 at top of trunk
+      // wander centre slightly with knots
+      const cx = 120 + Math.sin(t * 4.2) * 2 + Math.sin(t * 1.7) * 1.5;
+      // width tapers from ~13 at base to ~7 at top
+      const w = Math.max(6, Math.round(13 - t * 6));
       const xStart = Math.round(cx - w / 2);
       for (let i = 0; i < w; i++) {
-        const isShadow = i === w - 1;
-        const isHighlight = i === 0 && w > 2;
-        px(xStart + i, y, isShadow ? barkDark : (isHighlight ? barkLight : bark));
+        let col = bark;
+        if (i === 0) col = barkL;
+        else if (i === w - 1) col = barkD;
+        else if (i === w - 2) col = barkD;
+        // add bark knots / texture
+        if (((y * 7 + i * 11) % 13) === 0) col = barkD;
+        px(xStart + i, y, col);
       }
     }
+    // Root flare at the very bottom
+    for (let k = 0; k < 4; k++) {
+      px(112 - k, 150 - Math.floor(k / 2), barkD);
+      px(128 + k, 150 - Math.floor(k / 2), barkD);
+    }
 
-    // Main sitting branch (mostly straight with small knots)
-    for (let x = 38; x <= 202; x++) {
-      const wobble = Math.sin((x - 38) / 11) > 0.85 ? -1 : 0;
-      const y = BRANCH_Y + wobble;
+    // ---- Main horizontal sitting branch (thick limb) ----
+    for (let x = 30; x <= 210; x++) {
+      // subtle sag / wobble
+      const dy = (Math.sin((x - 30) / 14) > 0.9) ? -1 : 0;
+      const y = BRANCH_Y + dy;
       px(x, y, bark);
-      px(x, y + 1, barkDark);
-      if (wobble === -1) px(x, y + 2, barkDark);
+      px(x, y + 1, barkD);
     }
-    // branch tip taper
-    px(38, BRANCH_Y - 1, bark);
-    px(202, BRANCH_Y - 1, bark);
-
-    // Gnarled dead twigs along main branch (up)
-    function twig(points) {
-      for (const [x, y] of points) px(x, y, bark);
+    // Connect branch into trunk with a knot
+    for (let x = 110; x <= 130; x++) {
+      px(x, BRANCH_Y - 1, bark);
+      px(x, BRANCH_Y, bark);
     }
-    twig([[52, 99], [52, 98], [51, 97], [51, 96], [50, 95], [49, 94]]);
-    twig([[78, 99], [78, 98], [79, 97], [79, 96], [80, 95]]);
-    twig([[96, 99], [96, 98], [95, 97], [94, 96], [93, 95], [92, 94]]);
-    twig([[145, 99], [145, 98], [146, 97], [147, 96], [147, 95], [148, 94]]);
-    twig([[170, 99], [170, 98], [169, 97], [170, 96], [169, 95]]);
-    twig([[190, 99], [190, 98], [191, 97], [192, 97], [193, 96]]);
+    // Branch taper on both ends
+    px(30, BRANCH_Y - 1, bark); px(29, BRANCH_Y, barkD);
+    px(210, BRANCH_Y - 1, bark); px(211, BRANCH_Y, barkD);
 
-    // Drooping dead twigs (down from main branch)
-    twig([[65, 102], [65, 103], [64, 104], [64, 105]]);
-    twig([[125, 102], [126, 103], [126, 104], [127, 105], [128, 106]]);
-    twig([[183, 102], [182, 103], [182, 104]]);
+    // ---- Primary upward branches forking from top of trunk ----
+    // Up-left main branch
+    line(118, 108, 108, 95, bark);
+    line(108, 95, 94, 80, bark);
+    line(94, 80, 78, 68, bark);
+    line(78, 68, 62, 55, bark);
+    // Up-center main branch
+    line(120, 108, 120, 92, bark);
+    line(120, 92, 118, 75, bark);
+    line(118, 75, 115, 55, bark);
+    line(115, 55, 116, 38, bark);
+    // Up-right main branch
+    line(122, 108, 132, 94, bark);
+    line(132, 94, 148, 78, bark);
+    line(148, 78, 164, 66, bark);
+    line(164, 66, 180, 55, bark);
 
-    // Side twigs from the twisted trunk
-    twig([[114, 120], [113, 119], [112, 118], [111, 117], [110, 116]]);
-    twig([[125, 82], [126, 81], [127, 80], [128, 80], [129, 79]]);
-    twig([[122, 60], [123, 59], [124, 59], [125, 58], [126, 57]]);
-    twig([[111, 45], [110, 44], [109, 43], [108, 43]]);
-    twig([[123, 34], [124, 33], [125, 33]]);
-    twig([[116, 28], [115, 27]]);
+    // ---- Fine twigs forking off the primary branches ----
+    // From the up-left branch
+    line(108, 95, 96, 86, bark);
+    line(96, 86, 88, 76, bark);
+    line(94, 80, 88, 66, bark);
+    line(78, 68, 70, 62, bark);
+    line(78, 68, 82, 58, bark);
+    line(62, 55, 52, 50, bark);
+    line(62, 55, 58, 42, bark);
+    line(62, 55, 66, 44, bark);
+    line(52, 50, 44, 48, bark);
+    line(52, 50, 48, 40, bark);
+    // Tiny end twigs
+    line(44, 48, 40, 44, bark);
+    line(58, 42, 54, 36, bark);
+    line(66, 44, 68, 38, bark);
+    line(88, 66, 84, 58, bark);
+    line(70, 62, 64, 58, bark);
+    line(82, 58, 80, 50, bark);
+    line(88, 76, 82, 72, bark);
 
-    // Tiny clumps of dried leaves (very sparse)
-    px(50, 94, dryGreen);
-    px(92, 93, dryGreen);
-    px(148, 93, dryGreen);
-    px(109, 42, dryGreen);
+    // From the up-center branch
+    line(118, 75, 110, 68, bark);
+    line(118, 75, 126, 70, bark);
+    line(115, 55, 108, 48, bark);
+    line(115, 55, 122, 48, bark);
+    line(116, 38, 110, 32, bark);
+    line(116, 38, 122, 32, bark);
+    line(116, 38, 116, 28, bark);
+    line(110, 32, 104, 26, bark);
+    line(122, 32, 128, 26, bark);
+    line(108, 48, 102, 42, bark);
+    line(122, 48, 128, 42, bark);
+
+    // From the up-right branch
+    line(132, 94, 142, 88, bark);
+    line(132, 94, 138, 84, bark);
+    line(148, 78, 158, 72, bark);
+    line(148, 78, 154, 64, bark);
+    line(164, 66, 174, 62, bark);
+    line(164, 66, 168, 54, bark);
+    line(180, 55, 192, 50, bark);
+    line(180, 55, 186, 40, bark);
+    line(180, 55, 176, 44, bark);
+    line(192, 50, 200, 46, bark);
+    line(186, 40, 182, 34, bark);
+    line(186, 40, 192, 34, bark);
+    line(176, 44, 172, 38, bark);
+    line(158, 72, 162, 62, bark);
+    line(142, 88, 148, 84, bark);
+
+    // ---- Drooping small branches from the main horizontal branch ----
+    line(48, 101, 42, 108, bark);
+    line(42, 108, 38, 114, bark);
+    line(72, 101, 70, 109, bark);
+    line(70, 109, 68, 116, bark);
+    line(90, 101, 92, 108, bark);
+    line(150, 101, 152, 109, bark);
+    line(152, 109, 154, 116, bark);
+    line(170, 101, 168, 110, bark);
+    line(192, 101, 196, 108, bark);
+    line(196, 108, 198, 114, bark);
+
+    // ---- Upward twigs straight off the sitting branch ----
+    line(38, 100, 34, 92, bark);
+    line(34, 92, 30, 86, bark);
+    line(58, 99, 54, 92, bark);
+    line(200, 99, 204, 92, bark);
+    line(204, 92, 208, 86, bark);
+    line(160, 99, 166, 90, bark);
+    line(140, 99, 144, 92, bark);
+
+    // ---- A couple of trunk side-twigs ----
+    line(112, 130, 104, 126, bark);
+    line(128, 128, 136, 124, bark);
+    line(112, 118, 105, 115, bark);
+    line(128, 115, 134, 112, bark);
   }
 
   function trunkAtY(y) {
-    if (y < 25 || y > 145) return null;
-    const t = (145 - y) / 120;
-    const cx = 119 + Math.sin(t * 7.0) * 5 + Math.sin(t * 2.3) * 3;
-    const w = Math.max(2, Math.round(4 - t * 2));
+    if (y < 108 || y > 150) return null;
+    const t = (150 - y) / 42;
+    const cx = 120 + Math.sin(t * 4.2) * 2 + Math.sin(t * 1.7) * 1.5;
+    const w = Math.max(6, Math.round(13 - t * 6));
     return { x: cx - w / 2, w };
   }
 
   function overlapsTree(x, y, w, h) {
-    // Rough trunk bbox
-    if (x + w > TREE.trunkX1 && x < TREE.trunkX2 &&
-        y + h > TREE.trunkY1 && y < TREE.trunkY2) {
-      // Check per-row against actual trunk
-      for (let yy = Math.max(y, 25); yy < Math.min(y + h, 146); yy++) {
-        const tr = trunkAtY(yy);
-        if (!tr) continue;
-        if (x + w > tr.x - 1 && x < tr.x + tr.w + 1) return true;
-      }
+    // Trunk
+    for (let yy = Math.max(y, 108); yy < Math.min(y + h, 151); yy++) {
+      const tr = trunkAtY(yy);
+      if (!tr) continue;
+      if (x + w > tr.x - 1 && x < tr.x + tr.w + 1) return true;
     }
     // Main branch strip
     if (x + w > TREE.branchX1 && x < TREE.branchX2 &&
         y + h > TREE.branchY - 1 && y < TREE.branchY + 3) return true;
+    // Approximate upper canopy ellipse (keeps rabbits out of the branch cluster)
+    const cxR = x + w / 2, cyR = y + h / 2;
+    const dx = (cxR - 120) / 88;
+    const dy = (cyR - 68) / 45;
+    if (dx * dx + dy * dy < 1 && cyR < 100) return true;
     return false;
   }
 
   function faceTouchesTree(fx, fy, fw, fh) {
-    if (fx + fw < TREE.trunkX1 || fx > TREE.trunkX2) return false;
-    for (let yy = Math.max(fy, 25); yy < Math.min(fy + fh, 146); yy++) {
+    // Trunk
+    for (let yy = Math.max(fy, 108); yy < Math.min(fy + fh, 151); yy++) {
       const tr = trunkAtY(yy);
       if (!tr) continue;
       if (fx + fw > tr.x && fx < tr.x + tr.w) return true;
     }
+    // Main horizontal branch
+    if (fx + fw > TREE.branchX1 && fx < TREE.branchX2 &&
+        fy + fh > TREE.branchY - 1 && fy < TREE.branchY + 2) return true;
     return false;
   }
 
