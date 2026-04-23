@@ -327,7 +327,7 @@
   const BRANCH_Y = 100;
   const TREE_APPEAR_AT = 30000;
   const LEVEL_2_SCORE = 20;
-  const LEVEL_3_SCORE = 50;
+  const LEVEL_3_SCORE = 40;
 
   // Tree geometry (squat, bushy, wide)
   const TREE = {
@@ -561,10 +561,15 @@
   let bestScore = 0;
   try { bestScore = parseInt(localStorage.getItem('rabbitHuntBest') || '0', 10) || 0; } catch (e) {}
 
-  const goldSchedule = [
-    { at: 30000, spawned: false },
-    { at: 55000, spawned: false },
-  ];
+  const goldSchedule = [];
+  function setGoldScheduleForLevel(lv) {
+    goldSchedule.length = 0;
+    const times = (lv === 3)
+      ? [5000, 10000, 15000, 40000, 45000, 50000]
+      : [30000, 55000];
+    for (const t of times) goldSchedule.push({ at: t, spawned: false });
+  }
+  setGoldScheduleForLevel(1);
 
   function spawnRabbit(type) {
     let x = 0, y = 0;
@@ -906,7 +911,7 @@
     rabbits.length = 0;
     spawnTimer = 0;
     nextSpawn = 500 + Math.random() * 900;
-    for (const g of goldSchedule) g.spawned = false;
+    setGoldScheduleForLevel(2);
     treeActive = false;
     onBranch = false;
     facing = 'left';
@@ -927,7 +932,7 @@
     rabbits.length = 0;
     spawnTimer = 0;
     nextSpawn = 500 + Math.random() * 900;
-    for (const g of goldSchedule) g.spawned = false;
+    setGoldScheduleForLevel(3);
     treeActive = false;
     onBranch = false;
     facing = 'left';
@@ -964,7 +969,7 @@
     rabbits.length = 0;
     spawnTimer = 0;
     nextSpawn = 500 + Math.random() * 900;
-    for (const g of goldSchedule) g.spawned = false;
+    setGoldScheduleForLevel(1);
     level = 1;
     pendingNextLevel = null;
     facing = 'left';
