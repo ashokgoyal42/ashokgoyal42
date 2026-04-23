@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tennis</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #ffffff;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #111;
+  }
+  #wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 560px;
+    padding: 8px;
+    box-sizing: border-box;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+    background: #ffffff;
+    touch-action: none;
+    cursor: none;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  #bar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-size: 12px;
+    color: #111;
+    width: 100%;
+    justify-content: space-between;
+  }
+  #bar .group { display: flex; gap: 6px; align-items: center; }
+  button, select {
+    font: inherit;
+    padding: 4px 10px;
+    border: 1px solid #111;
+    background: #fff;
+    border-radius: 0;
+    cursor: pointer;
+    color: #111;
+  }
+  button:hover, select:hover { background: #f0f0f0; }
+  #hint { font-size: 11px; color: #555; letter-spacing: 0.3px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="bar">
+    <div class="group">
+      <span id="score">you 0 · cpu 0</span>
+    </div>
+    <div class="group">
+      <label for="diff">lvl</label>
+      <select id="diff">
+        <option value="0.25">1</option>
+        <option value="0.45" selected>2</option>
+        <option value="0.65">3</option>
+        <option value="0.85">4</option>
+      </select>
+      <button id="serve">serve</button>
+    </div>
+  </div>
+  <canvas id="c" width="560" height="720"></canvas>
+  <div id="hint">swipe across your half · flick to hit · slow-mo</div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+  const scoreEl = document.getElementById('score');
+  const diffEl = document.getElementById('diff');
+  const serveBtn = document.getElementById('serve');
+
+  // Court geometry
+  const court = {
+    x: 40, y: 40, w: W - 80, h: H - 80,
+    net: H / 2,
+  };
+
+  const RACKET_W = 44;
+  const RACKET_H = 4;
+  const CURSOR_TAIL = 10; // vertical tails of the text cursor
+
+  const state = {
+    player: { x: W / 2, y: H - 80, vx: 0 },
+    cpu:    { x: W / 2, y: 80,       vx: 0 },
+    ball:   { x: W / 2, y: H - 82, vx: 0, vy: 0, live: false, owner: 'player' },
+    score:  { player: 0, cpu: 0 },
+    pointer: { x: W / 2, y: H - 80, vx: 0, lastT: 0, active: false },
+    blink:  0,
+    tPrev:  performance.now(),
+    efficiency: parseFloat(diffEl.value),
+    message: 'tap serve',
+  };
+
+  function resetServe(who) {
+    state.ball.live = false;
+    if (who === 'player') {
+      state.ball.x = state.player.x;
+      state.ball.y = state.player.y - 10;
+      state.ball.owner = 'player';
+    } else {
+      state.ball.x = state.cpu.x;
+      state.ball.y = state.cpu.y + 10;
+      state.ball.owner = 'cpu';
+    }
+    state.ball.vx = 0;
+    state.ball.vy = 0;
+  }
+
+  function serve() {
+    if (state.ball.live) return;
+    // Slow-mo serve toward the other side
+    if (state.ball.owner === 'player') {
+      state.ball.vy = -0.9;
+      state.ball.vx = (Math.random() - 0.5) * 0.3;
+    } else {
+      state.ball.vy = 0.9;
+      state.ball.vx = (Math.random() - 0.5) * 0.3;
+    }
+    state.ball.live = true;
+    state.message = '';
+  }
+
+  serveBtn.addEventListener('click', serve);
+  diffEl.addEventListener('change', () => {
+    state.efficiency = parseFloat(diffEl.value);
+  });
+
+  // Pointer / swipe tracking on player's half
+  function canvasCoords(e) {
+    const r = canvas.getBoundingClientRect();
+    const sx = canvas.width / r.width;
+    const sy = canvas.height / r.height;
+    return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+  }
+
+  function onPointerMove(e) {
+    e.preventDefault();
+    const p = canvasCoords(e);
+    const now = performance.now();
+    const dt = Math.max(1, now - state.pointer.lastT);
+    // sensitivity: small swipes become big forces
+    state.pointer.vx = (p.x - state.pointer.x) / dt * 16; // px/ms * scale
+    state.pointer.x = p.x;
+    state.pointer.y = p.y;
+    state.pointer.lastT = now;
+    state.pointer.active = true;
+  }
+  function onPointerDown(e) {
+    const p = canvasCoords(e);
+    state.pointer.x = p.x;
+    state.pointer.y = p.y;
+    state.pointer.lastT = performance.now();
+    state.pointer.vx = 0;
+    state.pointer.active = true;
+    // tap to serve
+    if (!state.ball.live && state.ball.owner === 'player') serve();
+  }
+  function onPointerUp() {
+    state.pointer.active = false;
+    state.pointer.vx *= 0.5;
+  }
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerUp);
+  canvas.addEventListener('pointerleave', onPointerUp);
+
+  // --- loop ---
+  function step(now) {
+    const dtMs = Math.min(50, now - state.tPrev);
+    state.tPrev = now;
+    const dt = dtMs / 16.67; // normalize to 60fps frames
+    state.blink += dtMs;
+
+    // Player racket follows pointer (clamped to player's half)
+    const targetX = state.pointer.active ? state.pointer.x : state.player.x;
+    const prevX = state.player.x;
+    state.player.x += (targetX - state.player.x) * Math.min(1, 0.6 * dt);
+    state.player.x = clamp(state.player.x, court.x + RACKET_W / 2, court.x + court.w - RACKET_W / 2);
+    state.player.vx = (state.player.x - prevX) / Math.max(dt, 0.001);
+
+    // CPU AI: efficiency drives tracking speed, aim, and miss rate
+    const eff = state.efficiency;
+    const ball = state.ball;
+    // predict where ball will cross cpu line (very rough)
+    let cpuTarget = state.cpu.x;
+    if (ball.live && ball.vy < 0) {
+      const t = (state.cpu.y - ball.y) / ball.vy;
+      cpuTarget = ball.x + ball.vx * t;
+      // jitter inversely proportional to efficiency
+      cpuTarget += (Math.random() - 0.5) * (1 - eff) * 140;
+    }
+    const cpuPrev = state.cpu.x;
+    const cpuLerp = 0.04 + eff * 0.18;
+    state.cpu.x += (cpuTarget - state.cpu.x) * Math.min(1, cpuLerp * dt);
+    state.cpu.x = clamp(state.cpu.x, court.x + RACKET_W / 2, court.x + court.w - RACKET_W / 2);
+    state.cpu.vx = (state.cpu.x - cpuPrev) / Math.max(dt, 0.001);
+
+    // Ball physics (slow-mo: tiny speeds, light damping)
+    if (ball.live) {
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+      // very gentle friction to emphasize slow-mo feel
+      ball.vx *= Math.pow(0.999, dt);
+      ball.vy *= Math.pow(0.9995, dt);
+
+      // side walls
+      if (ball.x < court.x + 2) { ball.x = court.x + 2; ball.vx = Math.abs(ball.vx); }
+      if (ball.x > court.x + court.w - 2) { ball.x = court.x + court.w - 2; ball.vx = -Math.abs(ball.vx); }
+
+      // racket collisions
+      // player at bottom
+      if (ball.vy > 0 && ball.y >= state.player.y - RACKET_H && ball.y <= state.player.y + 4) {
+        if (Math.abs(ball.x - state.player.x) < RACKET_W / 2 + 2) {
+          ball.y = state.player.y - RACKET_H;
+          ball.vy = -Math.max(0.7, Math.abs(ball.vy)) - 0.15;
+          // swipe adds lateral force (very sensitive)
+          ball.vx = clamp(ball.vx + state.player.vx * 0.55, -2.2, 2.2);
+          ball.owner = 'cpu';
+        }
+      }
+      // cpu at top
+      if (ball.vy < 0 && ball.y <= state.cpu.y + RACKET_H && ball.y >= state.cpu.y - 4) {
+        if (Math.abs(ball.x - state.cpu.x) < RACKET_W / 2 + 2) {
+          // efficiency affects whether cpu "catches" it cleanly
+          const miss = Math.random() > (0.55 + eff * 0.45);
+          if (!miss) {
+            ball.y = state.cpu.y + RACKET_H;
+            ball.vy = Math.max(0.7, Math.abs(ball.vy)) + 0.1 + eff * 0.2;
+            // cpu aims further from player's x when efficient
+            const aim = (state.player.x > W / 2 ? -1 : 1) * eff * 0.9;
+            ball.vx = clamp(aim + state.cpu.vx * 0.35 + (Math.random() - 0.5) * (1 - eff) * 0.6, -2.2, 2.2);
+            ball.owner = 'player';
+          }
+        }
+      }
+
+      // out of bounds = point
+      if (ball.y > court.y + court.h) {
+        state.score.cpu += 1;
+        state.message = 'cpu scores';
+        updateScore();
+        resetServe('player');
+      } else if (ball.y < court.y) {
+        state.score.player += 1;
+        state.message = 'you score';
+        updateScore();
+        resetServe('cpu');
+        // auto-serve from cpu after short pause
+        setTimeout(() => { if (!state.ball.live) serve(); }, 900);
+      }
+    } else {
+      // ball rests on current server
+      if (state.ball.owner === 'player') {
+        state.ball.x = state.player.x;
+        state.ball.y = state.player.y - 10;
+      } else {
+        state.ball.x = state.cpu.x;
+        state.ball.y = state.cpu.y + 10;
+      }
+    }
+
+    draw();
+    requestAnimationFrame(step);
+  }
+
+  function updateScore() {
+    scoreEl.textContent = `you ${state.score.player} · cpu ${state.score.cpu}`;
+  }
+
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // Court outline
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(court.x + 0.5, court.y + 0.5, court.w, court.h);
+
+    // Service lines (singles)
+    ctx.beginPath();
+    ctx.moveTo(court.x + 0.5, court.y + court.h * 0.28 + 0.5);
+    ctx.lineTo(court.x + court.w + 0.5, court.y + court.h * 0.28 + 0.5);
+    ctx.moveTo(court.x + 0.5, court.y + court.h * 0.72 + 0.5);
+    ctx.lineTo(court.x + court.w + 0.5, court.y + court.h * 0.72 + 0.5);
+    // center service line
+    ctx.moveTo(W / 2 + 0.5, court.y + court.h * 0.28 + 0.5);
+    ctx.lineTo(W / 2 + 0.5, court.y + court.h * 0.72 + 0.5);
+    ctx.stroke();
+
+    // Net (dashed pixel line)
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(court.x, court.net + 0.5);
+    ctx.lineTo(court.x + court.w, court.net + 0.5);
+    ctx.stroke();
+    ctx.restore();
+
+    // Blinking cursor rackets
+    const blinkOn = (state.blink % 900) < 550;
+    drawCursorRacket(state.cpu.x, state.cpu.y, blinkOn);
+    drawCursorRacket(state.player.x, state.player.y, blinkOn || state.pointer.active);
+
+    // Ball (pixel square)
+    if (state.ball.live || true) {
+      const bx = Math.round(state.ball.x) - 2;
+      const by = Math.round(state.ball.y) - 2;
+      ctx.fillStyle = '#111';
+      ctx.fillRect(bx, by, 4, 4);
+      // subtle slow-mo trail (monotone)
+      ctx.globalAlpha = 0.25;
+      ctx.fillRect(bx - Math.sign(state.ball.vx) * 2, by - Math.sign(state.ball.vy) * 2, 3, 3);
+      ctx.globalAlpha = 0.12;
+      ctx.fillRect(bx - Math.sign(state.ball.vx) * 5, by - Math.sign(state.ball.vy) * 5, 2, 2);
+      ctx.globalAlpha = 1;
+    }
+
+    // Message
+    if (state.message) {
+      ctx.fillStyle = '#111';
+      ctx.font = '11px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(state.message, W / 2, court.net - 10);
+    }
+  }
+
+  function drawCursorRacket(cx, cy, on) {
+    // horizontal bar (racket face)
+    ctx.fillStyle = '#111';
+    ctx.fillRect(Math.round(cx - RACKET_W / 2), Math.round(cy - RACKET_H / 2), RACKET_W, RACKET_H);
+    // blinking vertical caret above bar = "sleeping cursor"
+    if (on) {
+      ctx.fillRect(Math.round(cx) - 1, Math.round(cy - RACKET_H / 2 - CURSOR_TAIL), 2, CURSOR_TAIL);
+      ctx.fillRect(Math.round(cx) - 1, Math.round(cy + RACKET_H / 2), 2, CURSOR_TAIL);
+    }
+  }
+
+  // init
+  updateScore();
+  resetServe('player');
+  requestAnimationFrame((t) => { state.tPrev = t; step(t); });
+})();
+</script>
+</body>
+</html>
