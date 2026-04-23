@@ -328,6 +328,7 @@
   const TREE_APPEAR_AT = 30000;
   const LEVEL_2_SCORE = 20;
   const LEVEL_3_SCORE = 40;
+  const LEVEL_4_SCORE = 70;
 
   // Tree geometry (squat, bushy, wide)
   const TREE = {
@@ -571,12 +572,105 @@
   const goldSchedule = [];
   function setGoldScheduleForLevel(lv) {
     goldSchedule.length = 0;
-    const times = (lv === 3)
+    const times = (lv >= 3)
       ? [5000, 10000, 15000, 40000, 45000, 50000]
       : [30000, 55000];
     for (const t of times) goldSchedule.push({ at: t, spawned: false });
   }
   setGoldScheduleForLevel(1);
+
+  // ---- Snakes (Level 4) ----
+  const snakes = [];
+  const MAX_SNAKES = 2;
+  const SNAKE_SEG_COUNT = 14;
+  const SNAKE_SEG_SPACING = 2;
+  const SNAKE_HIT_COOLDOWN = 900;
+  let snakeSpawnTimer = 0;
+  let nextSnakeSpawn = 2500;
+  let lastSnakeHit = -Infinity;
+
+  function spawnSnake() {
+    const fromLeft = Math.random() < 0.5;
+    const y = 26 + Math.floor(Math.random() * (H - 40));
+    const x = fromLeft ? -30 : W + 30;
+    const dir = fromLeft ? 'right' : 'left';
+    const speed = 0.35 + Math.random() * 0.25;
+    snakes.push({ x, y, dir, speed, t: Math.random() * 6.28 });
+  }
+
+  function snakeSegment(s, i) {
+    const dx = i * SNAKE_SEG_SPACING * (s.dir === 'right' ? -1 : 1);
+    const sx = Math.round(s.x + dx);
+    const sy = Math.round(s.y + Math.sin(s.t + i * 0.5) * 2);
+    return { x: sx, y: sy };
+  }
+
+  function drawSnake(s) {
+    const body = '#4e8a24';
+    const bodyD = '#2b4d12';
+    const bodyL = '#72b046';
+    for (let i = SNAKE_SEG_COUNT - 1; i >= 0; i--) {
+      const seg = snakeSegment(s, i);
+      // Main body pixel + shadow
+      px(seg.x, seg.y, i === 0 ? bodyL : body);
+      px(seg.x, seg.y + 1, bodyD);
+      // thicker mid-body
+      if (i > 1 && i < SNAKE_SEG_COUNT - 2) {
+        px(seg.x, seg.y - 1, body);
+      }
+    }
+    // Head details (on segment 0)
+    const head = snakeSegment(s, 0);
+    px(head.x, head.y - 1, bodyL);
+    px(head.x + (s.dir === 'right' ? 1 : -1), head.y, bodyL);
+    // Eye
+    px(head.x + (s.dir === 'right' ? -1 : 1), head.y - 1, '#000');
+    // Tongue (forked) flicks randomly
+    if (Math.floor(s.t * 6) % 4 === 0) {
+      const hx = head.x + (s.dir === 'right' ? 2 : -2);
+      px(hx, head.y, '#e04040');
+      px(hx + (s.dir === 'right' ? 1 : -1), head.y - 1, '#e04040');
+      px(hx + (s.dir === 'right' ? 1 : -1), head.y + 1, '#e04040');
+    }
+  }
+
+  function snakeHitsFace(s, fx, fy, fw, fh) {
+    for (let i = 0; i < SNAKE_SEG_COUNT; i++) {
+      const seg = snakeSegment(s, i);
+      if (seg.x >= fx && seg.x < fx + fw && seg.y >= fy - 1 && seg.y <= fy + fh) return true;
+    }
+    return false;
+  }
+
+  function playHiss() { tone(180, 0.22, 'sawtooth', 0.16, 70); }
+
+  function updateSnakes(dt, now, fx, fy, fw, fh) {
+    for (let i = snakes.length - 1; i >= 0; i--) {
+      const s = snakes[i];
+      s.x += s.speed * (dt / 16.667) * (s.dir === 'right' ? 1 : -1);
+      s.t += dt * 0.009;
+      if (s.x < -50 || s.x > W + 50) {
+        snakes.splice(i, 1);
+        continue;
+      }
+      if (gameState === 'playing' && now - lastSnakeHit >= SNAKE_HIT_COOLDOWN &&
+          snakeHitsFace(s, fx, fy, fw, fh)) {
+        lastSnakeHit = now;
+        if (score > 0) score--;
+        combo = 0;
+        playHiss();
+        showPopup(Math.round(s.x), Math.round(s.y) - 6, '−1', false);
+      }
+    }
+    if (gameState === 'playing' && level >= 4) {
+      snakeSpawnTimer += dt;
+      if (snakes.length < MAX_SNAKES && snakeSpawnTimer >= nextSnakeSpawn) {
+        snakeSpawnTimer = 0;
+        nextSnakeSpawn = 3500 + Math.random() * 4500;
+        spawnSnake();
+      }
+    }
+  }
 
   function spawnRabbit(type) {
     let x = 0, y = 0;
@@ -764,6 +858,8 @@
         if (sec >= 1 && sec <= 5) playTick();
       }
     }
+
+    updateSnakes(dt, now, fx, fy, fw, fh);
   }
 
   function formatTime(ms) {
@@ -790,6 +886,7 @@
     ctx.fillRect(0, 0, W, H);
 
     if (treeActive) drawTree();
+    for (const s of snakes) drawSnake(s);
 
     for (const r of rabbits) {
       if (r.caught != null) {
@@ -820,6 +917,14 @@
       ctx.restore();
     } else {
       drawLeopard(ox, oy, frame, standing);
+    }
+
+    // Red flash when bitten by a snake
+    const sinceHit = now - lastSnakeHit;
+    if (sinceHit < 280) {
+      const alpha = (1 - sinceHit / 280) * 0.35;
+      ctx.fillStyle = 'rgba(220,30,30,' + alpha.toFixed(3) + ')';
+      ctx.fillRect(0, 0, W, H);
     }
   }
 
@@ -912,6 +1017,7 @@
     if (gameState === 'intermission') {
       if (pendingNextLevel === 2) startLevel2();
       else if (pendingNextLevel === 3) startLevel3();
+      else if (pendingNextLevel === 4) startLevel4();
     } else {
       resetGame();
     }
@@ -941,6 +1047,22 @@
       overTitleEl.textContent = 'LEVEL 3!';
       overScoreEl.textContent = 'Score: ' + score;
       overStatsEl.textContent = 'Next: the rabbits hop around · tap the rear to flip direction anytime';
+      overHintEl.textContent = 'Tap to continue';
+      overlay.classList.add('show');
+      timerEl.classList.remove('urgent');
+    } else {
+      endGame();
+    }
+  }
+
+  function endLevel3() {
+    if (score >= LEVEL_4_SCORE) {
+      gameState = 'intermission';
+      pendingNextLevel = 4;
+      walking = false;
+      overTitleEl.textContent = 'LEVEL 4!';
+      overScoreEl.textContent = 'Score: ' + score;
+      overStatsEl.textContent = 'Watch out: snakes slither across · face-touch loses a point';
       overHintEl.textContent = 'Tap to continue';
       overlay.classList.add('show');
       timerEl.classList.remove('urgent');
@@ -988,7 +1110,34 @@
     walking = true;
     gameState = 'playing';
     lastTickSecond = -1;
+    snakes.length = 0;
+    snakeSpawnTimer = 0;
     titleEl.textContent = 'RABBIT HUNT · L3';
+    overlay.classList.remove('show');
+    updateHud();
+  }
+
+  function startLevel4() {
+    level = 4;
+    pendingNextLevel = null;
+    timeLeft = GAME_DURATION;
+    rabbits.length = 0;
+    spawnTimer = 0;
+    nextSpawn = 500 + Math.random() * 900;
+    setGoldScheduleForLevel(4);
+    treeActive = false;
+    onBranch = false;
+    facing = 'left';
+    groundMax = H - 1;
+    pos = W;
+    walking = true;
+    gameState = 'playing';
+    lastTickSecond = -1;
+    snakes.length = 0;
+    snakeSpawnTimer = 0;
+    nextSnakeSpawn = 3500;
+    lastSnakeHit = -Infinity;
+    titleEl.textContent = 'RABBIT HUNT · L4';
     overlay.classList.remove('show');
     updateHud();
   }
@@ -1018,6 +1167,9 @@
     nextSpawn = 500 + Math.random() * 900;
     branchSpawnTimer = 0;
     branchCatches = 0;
+    snakes.length = 0;
+    snakeSpawnTimer = 0;
+    lastSnakeHit = -Infinity;
     setGoldScheduleForLevel(1);
     level = 1;
     pendingNextLevel = null;
@@ -1056,6 +1208,7 @@
         timeLeft = 0;
         if (level === 1) endLevel1();
         else if (level === 2) endLevel2();
+        else if (level === 3) endLevel3();
         else endGame();
       }
     }
