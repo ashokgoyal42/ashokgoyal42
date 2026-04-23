@@ -532,13 +532,20 @@
 
   const rabbits = [];
   const MAX_RABBITS = 3;
+  const MAX_BRANCH_RABBITS = 10;
+  const BRANCH_SPAWN_INTERVAL = 1000;
   const RABBIT_LIFE = 5000;
   const CAUGHT_DURATION = 500;
   const GAME_DURATION = 60000;
+  const BASE_SPEED = 0.45;
+  const MIN_BRANCH_SPEED = 0.12;
+  const BRANCH_SPEED_STEP = 0.02;
 
   let score = 0;
   let spawnTimer = 0;
   let nextSpawn = 500 + Math.random() * 900;
+  let branchSpawnTimer = 0;
+  let branchCatches = 0;
   let gameState = 'playing'; // 'playing' | 'intermission' | 'over'
   let timeLeft = GAME_DURATION;
   let lastTickSecond = -1;
@@ -579,8 +586,27 @@
       y = 4 + Math.floor(Math.random() * (H - RH - 8));
       tries++;
     } while (treeActive && overlapsTree(x, y, RW, RH) && tries < 20);
-    if (treeActive && overlapsTree(x, y, RW, RH)) return; // skip spawn if no valid spot
+    if (treeActive && overlapsTree(x, y, RW, RH)) return;
     const isGold = type === 'gold';
+    rabbits.push({
+      x, y,
+      born: performance.now(),
+      type: isGold ? 'gold' : 'normal',
+      life: isGold ? 3000 : RABBIT_LIFE,
+      points: isGold ? 5 : 1,
+    });
+  }
+
+  function spawnBranchRabbit(isGold) {
+    // Sit on top of the main horizontal branch; spread along x, skipping the trunk
+    const minX = TREE.branchX1 + 2;
+    const maxX = TREE.branchX2 - RW - 2;
+    let x, tries = 0;
+    do {
+      x = minX + Math.floor(Math.random() * (maxX - minX));
+      tries++;
+    } while (x + RW > 108 && x < 132 && tries < 6);
+    const y = TREE.branchY - RH;
     rabbits.push({
       x, y,
       born: performance.now(),
@@ -669,6 +695,7 @@
         const total = base + bonus;
         score += total;
         caughtCount++;
+        if (onBranch) branchCatches++;
         const cx = r.x + Math.floor(RW / 2);
         const cy = r.y;
         if (r.type === 'gold') {
@@ -693,24 +720,42 @@
         groundMax = BRANCH_Y;
         groundY = BRANCH_Y;
         walking = true;
+        branchCatches = 0;
+        branchSpawnTimer = 0;
+        // Clear any ground rabbits so the branch feast starts clean
+        for (let i = rabbits.length - 1; i >= 0; i--) {
+          if (rabbits[i].caught == null) rabbits.splice(i, 1);
+        }
         playSparkle();
         showPopup(pos + 12, groundY - 14, 'UP!', true);
       }
-      for (const g of goldSchedule) {
-        if (!g.spawned && elapsed >= g.at) {
-          g.spawned = true;
-          spawnRabbit('gold');
+
+      if (onBranch) {
+        // On the branch: rabbits rain onto the branch, ~1 per second, incl. gold
+        branchSpawnTimer += dt;
+        const liveCount = rabbits.filter(r => r.caught == null).length;
+        if (liveCount < MAX_BRANCH_RABBITS && branchSpawnTimer >= BRANCH_SPAWN_INTERVAL) {
+          branchSpawnTimer -= BRANCH_SPAWN_INTERVAL;
+          const isGold = Math.random() < 0.18;
+          spawnBranchRabbit(isGold);
         }
-      }
-      spawnTimer += dt;
-      const liveNormal = rabbits.filter(r => r.caught == null && r.type !== 'gold').length;
-      if (liveNormal < MAX_RABBITS && spawnTimer >= nextSpawn) {
-        spawnTimer = 0;
-        const urgent = timeLeft <= 10000;
-        const minMs = urgent ? 250 : 500;
-        const maxMs = urgent ? 700 : 1700;
-        nextSpawn = minMs + Math.random() * (maxMs - minMs);
-        spawnRabbit();
+      } else {
+        for (const g of goldSchedule) {
+          if (!g.spawned && elapsed >= g.at) {
+            g.spawned = true;
+            spawnRabbit('gold');
+          }
+        }
+        spawnTimer += dt;
+        const liveNormal = rabbits.filter(r => r.caught == null && r.type !== 'gold').length;
+        if (liveNormal < MAX_RABBITS && spawnTimer >= nextSpawn) {
+          spawnTimer = 0;
+          const urgent = timeLeft <= 10000;
+          const minMs = urgent ? 250 : 500;
+          const maxMs = urgent ? 700 : 1700;
+          nextSpawn = minMs + Math.random() * (maxMs - minMs);
+          spawnRabbit();
+        }
       }
       // Tick sound in last 5 seconds
       const sec = Math.ceil(timeLeft / 1000);
@@ -911,6 +956,8 @@
     rabbits.length = 0;
     spawnTimer = 0;
     nextSpawn = 500 + Math.random() * 900;
+    branchSpawnTimer = 0;
+    branchCatches = 0;
     setGoldScheduleForLevel(2);
     treeActive = false;
     onBranch = false;
@@ -969,6 +1016,8 @@
     rabbits.length = 0;
     spawnTimer = 0;
     nextSpawn = 500 + Math.random() * 900;
+    branchSpawnTimer = 0;
+    branchCatches = 0;
     setGoldScheduleForLevel(1);
     level = 1;
     pendingNextLevel = null;
@@ -995,7 +1044,6 @@
   let frameTimer = 0;
   let last = performance.now();
   let walking = true;
-  const speed = 0.45;
   const frameInterval = 150;
 
   function loop(now) {
@@ -1014,7 +1062,10 @@
 
     if (walking && gameState === 'playing') {
       const dir = (facing === 'left') ? -1 : 1;
-      pos += dir * speed * (dt / 16.667);
+      const effSpeed = onBranch
+        ? Math.max(MIN_BRANCH_SPEED, BASE_SPEED - branchCatches * BRANCH_SPEED_STEP)
+        : BASE_SPEED;
+      pos += dir * effSpeed * (dt / 16.667);
       if (pos < -26) pos = W + 4;
       if (pos > W + 4) pos = -26;
       frameTimer += dt;
