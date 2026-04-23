@@ -326,64 +326,109 @@
   // ---- Tree (Level 2) ----
   const BRANCH_Y = 100;
   const TREE_APPEAR_AT = 30000;
-  const LEVEL_UP_SCORE = 25;
+  const LEVEL_UP_SCORE = 20;
 
-  // Tree geometry
+  // Tree geometry (wider bbox since trunk twists)
   const TREE = {
-    trunkX1: 115, trunkX2: 123, trunkY1: 35, trunkY2: 140,
-    branchX1: 40, branchX2: 200, branchY: BRANCH_Y,
+    trunkX1: 108, trunkX2: 132, trunkY1: 25, trunkY2: 145,
+    branchX1: 38, branchX2: 202, branchY: BRANCH_Y,
   };
 
   function drawTree() {
-    const brown = '#6a3d1e';
-    const brownDark = '#3d2410';
-    const green = '#5a8c3a';
-    const greenL = '#7ab452';
+    const bark = '#5a3a1c';
+    const barkDark = '#3a2410';
+    const barkLight = '#8a6942';
+    const dryGreen = '#667a30';
 
-    // Trunk (cols 117..120, rows 35..140)
-    for (let y = 35; y <= 140; y++) {
-      px(117, y, brown);
-      px(118, y, brown);
-      px(119, y, brown);
-      px(120, y, brownDark);
+    // Twisted dead trunk (sine-curved, tapering up)
+    for (let y = 145; y >= 25; y--) {
+      const t = (145 - y) / 120;
+      const cx = 119 + Math.sin(t * 7.0) * 5 + Math.sin(t * 2.3) * 3;
+      const w = Math.max(2, Math.round(4 - t * 2));
+      const xStart = Math.round(cx - w / 2);
+      for (let i = 0; i < w; i++) {
+        const isShadow = i === w - 1;
+        const isHighlight = i === 0 && w > 2;
+        px(xStart + i, y, isShadow ? barkDark : (isHighlight ? barkLight : bark));
+      }
     }
-    // bark detail
-    px(117, 55, brownDark); px(120, 70, brown);
-    px(117, 88, brownDark); px(120, 115, brown);
 
-    // Main horizontal branch
-    for (let x = 40; x <= 200; x++) px(x, BRANCH_Y, brown);
-    for (let x = 41; x <= 199; x++) px(x, BRANCH_Y + 1, brownDark);
-    // Branch tips taper
-    px(40, BRANCH_Y - 1, brown);
-    px(200, BRANCH_Y - 1, brown);
+    // Main sitting branch (mostly straight with small knots)
+    for (let x = 38; x <= 202; x++) {
+      const wobble = Math.sin((x - 38) / 11) > 0.85 ? -1 : 0;
+      const y = BRANCH_Y + wobble;
+      px(x, y, bark);
+      px(x, y + 1, barkDark);
+      if (wobble === -1) px(x, y + 2, barkDark);
+    }
+    // branch tip taper
+    px(38, BRANCH_Y - 1, bark);
+    px(202, BRANCH_Y - 1, bark);
 
-    // Upper small branches/twigs
-    px(118, 30, brown); px(118, 29, brown);
-    px(119, 28, brown); px(120, 27, brown); px(121, 26, brown);
-    px(115, 40, brown); px(113, 41, brown);
-    px(122, 48, brown); px(124, 47, brown); px(126, 46, brown);
-    px(116, 60, brown); px(114, 61, brown);
+    // Gnarled dead twigs along main branch (up)
+    function twig(points) {
+      for (const [x, y] of points) px(x, y, bark);
+    }
+    twig([[52, 99], [52, 98], [51, 97], [51, 96], [50, 95], [49, 94]]);
+    twig([[78, 99], [78, 98], [79, 97], [79, 96], [80, 95]]);
+    twig([[96, 99], [96, 98], [95, 97], [94, 96], [93, 95], [92, 94]]);
+    twig([[145, 99], [145, 98], [146, 97], [147, 96], [147, 95], [148, 94]]);
+    twig([[170, 99], [170, 98], [169, 97], [170, 96], [169, 95]]);
+    twig([[190, 99], [190, 98], [191, 97], [192, 97], [193, 96]]);
 
-    // A few leaves (very little green)
-    px(125, 45, green); px(126, 45, greenL); px(127, 44, green);
-    px(112, 40, green); px(111, 40, greenL);
-    px(121, 25, green); px(122, 25, greenL);
+    // Drooping dead twigs (down from main branch)
+    twig([[65, 102], [65, 103], [64, 104], [64, 105]]);
+    twig([[125, 102], [126, 103], [126, 104], [127, 105], [128, 106]]);
+    twig([[183, 102], [182, 103], [182, 104]]);
+
+    // Side twigs from the twisted trunk
+    twig([[114, 120], [113, 119], [112, 118], [111, 117], [110, 116]]);
+    twig([[125, 82], [126, 81], [127, 80], [128, 80], [129, 79]]);
+    twig([[122, 60], [123, 59], [124, 59], [125, 58], [126, 57]]);
+    twig([[111, 45], [110, 44], [109, 43], [108, 43]]);
+    twig([[123, 34], [124, 33], [125, 33]]);
+    twig([[116, 28], [115, 27]]);
+
+    // Tiny clumps of dried leaves (very sparse)
+    px(50, 94, dryGreen);
+    px(92, 93, dryGreen);
+    px(148, 93, dryGreen);
+    px(109, 42, dryGreen);
+  }
+
+  function trunkAtY(y) {
+    if (y < 25 || y > 145) return null;
+    const t = (145 - y) / 120;
+    const cx = 119 + Math.sin(t * 7.0) * 5 + Math.sin(t * 2.3) * 3;
+    const w = Math.max(2, Math.round(4 - t * 2));
+    return { x: cx - w / 2, w };
   }
 
   function overlapsTree(x, y, w, h) {
-    // Trunk box
-    if (x + w > TREE.trunkX1 - 1 && x < TREE.trunkX2 + 2 &&
-        y + h > TREE.trunkY1 - 1 && y < TREE.trunkY2 + 2) return true;
+    // Rough trunk bbox
+    if (x + w > TREE.trunkX1 && x < TREE.trunkX2 &&
+        y + h > TREE.trunkY1 && y < TREE.trunkY2) {
+      // Check per-row against actual trunk
+      for (let yy = Math.max(y, 25); yy < Math.min(y + h, 146); yy++) {
+        const tr = trunkAtY(yy);
+        if (!tr) continue;
+        if (x + w > tr.x - 1 && x < tr.x + tr.w + 1) return true;
+      }
+    }
     // Main branch strip
-    if (x + w > TREE.branchX1 - 1 && x < TREE.branchX2 + 2 &&
+    if (x + w > TREE.branchX1 && x < TREE.branchX2 &&
         y + h > TREE.branchY - 1 && y < TREE.branchY + 3) return true;
     return false;
   }
 
   function faceTouchesTree(fx, fy, fw, fh) {
-    return fx + fw > TREE.trunkX1 && fx < TREE.trunkX2 + 1 &&
-           fy + fh > TREE.trunkY1 && fy < TREE.trunkY2 + 1;
+    if (fx + fw < TREE.trunkX1 || fx > TREE.trunkX2) return false;
+    for (let yy = Math.max(fy, 25); yy < Math.min(fy + fh, 146); yy++) {
+      const tr = trunkAtY(yy);
+      if (!tr) continue;
+      if (fx + fw > tr.x && fx < tr.x + tr.w) return true;
+    }
+    return false;
   }
 
   const rabbits = [];
