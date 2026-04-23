@@ -144,10 +144,11 @@
     rL: '#ff5050',
   };
 
+  let _drawCtx = ctx;
   function px(x, y, col) {
     if (!col) return;
-    ctx.fillStyle = col;
-    ctx.fillRect(x, y, 1, 1);
+    _drawCtx.fillStyle = col;
+    _drawCtx.fillRect(x, y, 1, 1);
   }
 
   // ---- Audio (lazy init on first user gesture) ----
@@ -384,7 +385,23 @@
     }
   }
 
+  let treeSprite = null;
+
   function drawTree() {
+    if (!treeSprite) {
+      const off = document.createElement('canvas');
+      off.width = W;
+      off.height = H;
+      const prev = _drawCtx;
+      _drawCtx = off.getContext('2d');
+      drawTreeRaw();
+      _drawCtx = prev;
+      treeSprite = off;
+    }
+    ctx.drawImage(treeSprite, 0, 0);
+  }
+
+  function drawTreeRaw() {
     const bark = '#6a4428';
     const barkD = '#3a2410';
     const barkL = '#8c6442';
@@ -573,8 +590,8 @@
   const CAUGHT_DURATION = 500;
   const GAME_DURATION = 60000;
   const BASE_SPEED = 0.45;
-  const MIN_BRANCH_SPEED = 0.12;
-  const BRANCH_SPEED_STEP = 0.02;
+  const MIN_BRANCH_SPEED = 0.22;
+  const BRANCH_SPEED_STEP = 0.012;
 
   let score = 0;
   let spawnTimer = 0;
