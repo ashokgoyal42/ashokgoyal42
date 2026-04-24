@@ -326,7 +326,7 @@
   const state = {
     player: { x: 220, y: 700, vx: 0, vy: 0, stam: 1 },
     cpu:    { x: 220, y: 80,  vx: 0, vy: 0 },
-    ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0, trailT: 0 },
+    ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0, trailT: 0, spin: 0 },
     pointer: { x: 220, y: 700, vx: 0, vy: 0, vxPeak: 0, vyPeak: 0, lastT: 0, active: false, lastWhoosh: 0 },
     tPrev:  performance.now(),
     efficiency: parseFloat(diffEl.value),
@@ -393,6 +393,7 @@
     state.ball.live = true;
     state.ball.prevY = state.ball.y;
     state.ball.trailT = 28;
+    state.ball.spin = 0;
     score.message = '';
     SND.serve();
   }
@@ -532,6 +533,12 @@
 
     if (ball.live) {
       const prevY = ball.y;
+      // Apply lateral curve from any spin imparted by a rear-court hit.
+      if (ball.spin) {
+        ball.vx += ball.spin * dt;
+        ball.spin *= Math.pow(0.985, dt);
+        if (Math.abs(ball.spin) < 0.001) ball.spin = 0;
+      }
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
       ball.vx *= Math.pow(0.999, dt);
@@ -557,6 +564,18 @@
           ball.vx = clamp((state.pointer.vxPeak * 0.7 + state.player.vx * 0.25) * strBoost, -4.0, 4.0);
           state.pointer.vxPeak *= 0.2;
           state.pointer.vyPeak *= 0.2;
+          // Positional modifier: forward zone = faster + flatter, rear zone = curve.
+          const innerZoneBottom = court.y + court.h * 0.72;
+          const inForward = state.player.y < innerZoneBottom;
+          if (inForward) {
+            ball.vy = clamp(ball.vy * 1.2, -5.6, -0.05);
+            ball.vx *= 0.65;
+            ball.spin = 0;
+          } else {
+            const dirSrc = state.player.vx + state.pointer.vx;
+            ball.spin = Math.sign(dirSrc || (Math.random() - 0.5)) *
+                        Math.min(0.06, Math.abs(dirSrc) * 0.012 + 0.02);
+          }
           // Drain: harder shots (more vy) cost more stamina.
           const drain = 0.04 + Math.min(0.06, Math.abs(ball.vy) / 60);
           state.player.stam = Math.max(0, state.player.stam - drain);
@@ -582,6 +601,7 @@
             ball.vx = clamp(aim + state.cpu.vx * 0.35 + (Math.random() - 0.5) * (1 - eff) * 0.8, -2.6, 2.6);
             ball.owner = 'player';
             ball.trailT = 28;
+            ball.spin = 0;
             SND.hitC();
           }
         }
@@ -649,9 +669,7 @@
     ctx.moveTo(court.x, court.net + 0.5);
     ctx.lineTo(court.x + court.w, court.net + 0.5);
     ctx.stroke();
-    ctx.restore();
-
-    drawRacket(state.cpu.x, state.cpu.y, 'top');
+    ctx.restore();    drawRacket(state.cpu.x, state.cpu.y, 'top');
     drawRacket(state.player.x, state.player.y, 'bottom');
 
     // server indicator: small dot just outside the court beside the server's racket
