@@ -69,7 +69,7 @@
     -webkit-appearance: none;
     appearance: none;
     background: transparent;
-    width: 160px;
+    width: 100px;
     height: 18px;
   }
   input[type=range]::-webkit-slider-runnable-track {
@@ -108,7 +108,11 @@
       <input id="diff" type="range" min="0" max="1" step="0.01" value="0.45">
       <span id="effval">0.45</span>
     </div>
-    <div id="hint">swipe to hit · flick up = power</div>
+    <div class="group">
+      <span>str</span>
+      <input id="str" type="range" min="0" max="1" step="0.01" value="0.5">
+      <span id="strval">0.50</span>
+    </div>
   </div>
 </div>
 <script>
@@ -119,6 +123,8 @@
   const gamesEl = document.getElementById('games');
   const diffEl = document.getElementById('diff');
   const effEl = document.getElementById('effval');
+  const strEl = document.getElementById('str');
+  const strvalEl = document.getElementById('strval');
   const serveBtn = document.getElementById('serve');
 
   // --- Sound ---
@@ -147,6 +153,7 @@
     hitP:   () => blip(880, 0.04, 0.05),
     hitC:   () => blip(660, 0.04, 0.05),
     serve:  () => { blip(520, 0.04, 0.04); setTimeout(() => blip(1040, 0.05, 0.05), 40); },
+    ace:    () => { blip(880, 0.06, 0.07); setTimeout(() => blip(1320, 0.08, 0.07), 60); setTimeout(() => blip(1980, 0.18, 0.07), 140); },
     whoosh: () => blip(300, 0.08, 0.02, 'triangle'),
     win:    () => { blip(900, 0.08, 0.06); setTimeout(() => blip(1300, 0.1, 0.05), 80); },
     loss:   () => blip(220, 0.18, 0.04, 'triangle'),
@@ -316,12 +323,14 @@
   }
 
   const state = {
-    player: { x: 220, y: 700, vx: 0, vy: 0 },
+    player: { x: 220, y: 700, vx: 0, vy: 0, stam: 1 },
     cpu:    { x: 220, y: 80,  vx: 0, vy: 0 },
-    ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0 },
+    ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0, trailT: 0 },
     pointer: { x: 220, y: 700, vx: 0, vy: 0, vxPeak: 0, vyPeak: 0, lastT: 0, active: false, lastWhoosh: 0 },
     tPrev:  performance.now(),
     efficiency: parseFloat(diffEl.value),
+    strength: parseFloat(strEl.value),
+    aceShout: 0,
     autoServeT: null,
   };
 
@@ -329,6 +338,11 @@
   diffEl.addEventListener('input', () => {
     state.efficiency = parseFloat(diffEl.value);
     effEl.textContent = state.efficiency.toFixed(2);
+  });
+  strvalEl.textContent = state.strength.toFixed(2);
+  strEl.addEventListener('input', () => {
+    state.strength = parseFloat(strEl.value);
+    strvalEl.textContent = state.strength.toFixed(2);
   });
 
   function resetServe(who) {
@@ -348,12 +362,28 @@
   function serve() {
     if (state.ball.live || score.matchOver) return;
     if (state.ball.owner === 'player') {
-      // Serve uses the flick memory too, with a bigger boost range.
-      const boost = clamp(-state.pointer.vyPeak * 0.55, 0, 2.0);
-      state.ball.vy = clamp(-0.9 - boost, -3.0, -0.4);
-      state.ball.vx = clamp((Math.random() - 0.5) * 0.3 + state.pointer.vxPeak * 0.35, -1.8, 1.8);
+      // Player serve: flick-driven power, strength-scaled. A long, fast,
+      // mostly-vertical flick triggers an ace boost.
+      const vxP = state.pointer.vxPeak;
+      const vyP = state.pointer.vyPeak;
+      const upward = -vyP;
+      const speed = Math.hypot(vxP, vyP);
+      const isAce =
+        upward > 5 && speed > 5.5 && Math.abs(vxP) < upward * 0.45;
+      const stamFactor = 0.45 + 0.55 * state.player.stam;
+      const strBoost = (0.6 + state.strength * 0.7) * stamFactor;
+      const aceMul = isAce ? 1.45 : 1.0;
+      const boost = clamp(upward * 0.55, 0, 2.2);
+      state.ball.vy = clamp((-0.9 - boost) * strBoost * aceMul, -3.8, -0.4);
+      state.ball.vx = clamp(((Math.random() - 0.5) * 0.3 + vxP * 0.35) * strBoost, -2.2, 2.2);
       state.pointer.vxPeak *= 0.2;
       state.pointer.vyPeak *= 0.2;
+      // Serves drain a bit more than rally; aces drain a lot more.
+      state.player.stam = Math.max(0, state.player.stam - (isAce ? 0.18 : 0.06));
+      if (isAce) {
+        state.aceShout = 70;
+        SND.ace();
+      }
     } else {
       const eff = state.efficiency;
       state.ball.vy = 0.9 + eff * 0.5;
@@ -361,6 +391,7 @@
     }
     state.ball.live = true;
     state.ball.prevY = state.ball.y;
+    state.ball.trailT = 28;
     score.message = '';
     SND.serve();
   }
@@ -441,6 +472,10 @@
     const decay = Math.pow(0.94, dt);
     state.pointer.vxPeak *= decay;
     state.pointer.vyPeak *= decay;
+    if (state.aceShout > 0) state.aceShout = Math.max(0, state.aceShout - dt);
+    // Stamina recovery: brisk between points, slow during a live rally.
+    const recoverPerSec = state.ball.live ? 0.04 : 0.18;
+    state.player.stam = Math.min(1, state.player.stam + recoverPerSec * dtMs / 1000);
 
     // Player legal area: anywhere in their half, between the net and the baseline.
     const playerYMin = court.net + 12;
@@ -460,27 +495,35 @@
     state.player.vx = (state.player.x - prevPX) / Math.max(dt, 0.001);
     state.player.vy = (state.player.y - prevPY) / Math.max(dt, 0.001);
 
-    // CPU 2D movement in its own half.
+    // CPU AI: attack — come forward when the ball is incoming, partially
+    // retreat while it's going away. Forward distance scales with eff.
+    // For CPU at the top, "forward" means INCREASING y (toward the net).
     const eff = state.efficiency;
     const ball = state.ball;
+    const cpuHomeY = court.y + 36;
+    const cpuMaxFwd = court.net - 18;
     const cpuYMin = court.y + 8;
     const cpuYMax = court.net - 12;
-    const cpuHomeY = court.y + 36;
     let cpuTargetX = state.cpu.x;
     let cpuTargetY = cpuHomeY;
-    if (ball.live && ball.vy < 0) {
-      const t = (state.cpu.y - ball.y) / ball.vy;
-      cpuTargetX = ball.x + ball.vx * t;
-      cpuTargetX += (Math.random() - 0.5) * (1 - eff) * 160;
-      // Step forward to meet the ball when the ball is close; stronger CPUs step further.
-      const meet = clamp(ball.y + 20, cpuYMin, cpuYMax);
-      cpuTargetY = cpuHomeY + (meet - cpuHomeY) * eff;
+    if (ball.live) {
+      if (ball.vy < 0) {
+        cpuTargetY = cpuHomeY + (cpuMaxFwd - cpuHomeY) * eff;
+      } else {
+        cpuTargetY = cpuHomeY + (cpuMaxFwd - cpuHomeY) * eff * 0.3;
+      }
+      // Predict where the ball will be at the target intercept line.
+      if (ball.vy < 0) {
+        const t = (cpuTargetY - ball.y) / ball.vy;
+        cpuTargetX = ball.x + ball.vx * t;
+        cpuTargetX += (Math.random() - 0.5) * (1 - eff) * 160;
+      }
     }
     const cpuPrevX = state.cpu.x;
     const cpuPrevY = state.cpu.y;
     const cpuLerp = 0.03 + eff * 0.22;
     state.cpu.x += (cpuTargetX - state.cpu.x) * Math.min(1, cpuLerp * dt);
-    state.cpu.y += (cpuTargetY - state.cpu.y) * Math.min(1, cpuLerp * 0.8 * dt);
+    state.cpu.y += (cpuTargetY - state.cpu.y) * Math.min(1, cpuLerp * 0.7 * dt);
     state.cpu.x = clamp(state.cpu.x, rxMin, rxMax);
     state.cpu.y = clamp(state.cpu.y, cpuYMin, cpuYMax);
     state.cpu.vx = (state.cpu.x - cpuPrevX) / Math.max(dt, 0.001);
@@ -492,6 +535,7 @@
       ball.y += ball.vy * dt;
       ball.vx *= Math.pow(0.999, dt);
       ball.vy *= Math.pow(0.9995, dt);
+      if (ball.trailT > 0) ball.trailT -= dt;
 
       // --- racket collisions ---
       // player (bottom): swept check — the racket itself may have moved during the frame
@@ -504,15 +548,19 @@
         const xHit = Math.abs(ball.x - state.player.x) < RACKET_W / 2 + 2;
         if (yHit && xHit) {
           ball.y = state.player.y - RACKET_H;
+          // Effective power = inherent strength × current stamina factor.
+          const stamFactor = 0.45 + 0.55 * state.player.stam;
+          const strBoost = (0.6 + state.strength * 0.7) * stamFactor;
           const base = -(Math.max(0.6, Math.abs(ball.vy))) - 0.1;
-          // Swipe up (vy<0) adds forward power; flick memory captures the peak
-          // of the thumb motion instead of only the instantaneous velocity.
-          ball.vy = clamp(base + state.pointer.vyPeak * 0.7, -4.2, -0.05);
-          ball.vx = clamp(state.pointer.vxPeak * 0.7 + state.player.vx * 0.25, -3.6, 3.6);
-          // Consume the peak so the next shot reads a fresh flick.
+          ball.vy = clamp((base + state.pointer.vyPeak * 0.7) * strBoost, -5.0, -0.05);
+          ball.vx = clamp((state.pointer.vxPeak * 0.7 + state.player.vx * 0.25) * strBoost, -4.0, 4.0);
           state.pointer.vxPeak *= 0.2;
           state.pointer.vyPeak *= 0.2;
+          // Drain: harder shots (more vy) cost more stamina.
+          const drain = 0.04 + Math.min(0.06, Math.abs(ball.vy) / 60);
+          state.player.stam = Math.max(0, state.player.stam - drain);
           ball.owner = 'cpu';
+          ball.trailT = 28;
           SND.hitP();
         }
       }
@@ -532,6 +580,7 @@
             const aim = (state.player.x > (court.x + court.w / 2) ? -1 : 1) * eff * 1.0;
             ball.vx = clamp(aim + state.cpu.vx * 0.35 + (Math.random() - 0.5) * (1 - eff) * 0.8, -2.6, 2.6);
             ball.owner = 'player';
+            ball.trailT = 28;
             SND.hitC();
           }
         }
@@ -575,10 +624,11 @@
     ctx.clearRect(0, 0, W, H);
 
     ctx.strokeStyle = '#111';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(court.x + 0.5, court.y + 0.5, court.w, court.h);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(court.x, court.y, court.w, court.h);
 
-    // service boxes
+    // service boxes (kept as 1px hairlines)
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(court.x + 0.5, court.y + court.h * 0.28 + 0.5);
     ctx.lineTo(court.x + court.w + 0.5, court.y + court.h * 0.28 + 0.5);
@@ -611,22 +661,58 @@
       ctx.fillRect(Math.round(rx) - 1, Math.round(dotY) - 1, 3, 3);
     }
 
-    // ball + slow-mo trail
-    const bx = Math.round(state.ball.x) - 2;
-    const by = Math.round(state.ball.y) - 2;
+    // ball
+    const BALL = 6;
+    const bcx = Math.round(state.ball.x);
+    const bcy = Math.round(state.ball.y);
     ctx.fillStyle = '#111';
-    ctx.fillRect(bx, by, 4, 4);
-    ctx.globalAlpha = 0.25;
-    ctx.fillRect(bx - Math.sign(state.ball.vx) * 2, by - Math.sign(state.ball.vy) * 2, 3, 3);
-    ctx.globalAlpha = 0.12;
-    ctx.fillRect(bx - Math.sign(state.ball.vx) * 5, by - Math.sign(state.ball.vy) * 5, 2, 2);
-    ctx.globalAlpha = 1;
+    ctx.fillRect(bcx - BALL / 2, bcy - BALL / 2, BALL, BALL);
+    // post-hit trajectory: two dots behind the ball along its travel direction
+    if (state.ball.live && state.ball.trailT > 0) {
+      const sp = Math.hypot(state.ball.vx, state.ball.vy);
+      if (sp > 0.05) {
+        const ux = -state.ball.vx / sp;
+        const uy = -state.ball.vy / sp;
+        const fade = clamp(state.ball.trailT / 28, 0, 1);
+        ctx.globalAlpha = 0.55 * fade;
+        ctx.fillRect(Math.round(bcx + ux * 7) - 1, Math.round(bcy + uy * 7) - 1, 3, 3);
+        ctx.globalAlpha = 0.3 * fade;
+        ctx.fillRect(Math.round(bcx + ux * 14) - 1, Math.round(bcy + uy * 14) - 1, 2, 2);
+        ctx.globalAlpha = 1;
+      }
+    }
 
     if (score.message) {
       ctx.fillStyle = '#111';
       ctx.font = '11px ui-monospace, Menlo, monospace';
       ctx.textAlign = 'center';
       ctx.fillText(score.message, W / 2, court.net - 8);
+    }
+
+    // Stamina bar (player) in the bottom margin.
+    {
+      const sx = court.x;
+      const sy = court.y + court.h + 8;
+      const sw = court.w;
+      const sh = 3;
+      ctx.strokeStyle = '#bbb';
+      ctx.strokeRect(sx + 0.5, sy + 0.5, sw, sh);
+      ctx.fillStyle = state.player.stam < 0.25 ? '#777' : '#111';
+      ctx.fillRect(sx + 1, sy + 1, Math.max(0, (sw - 1) * state.player.stam), sh - 1);
+      ctx.fillStyle = '#666';
+      ctx.font = '9px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('stam', sx, sy - 2);
+    }
+
+    if (state.aceShout > 0) {
+      const a = clamp(state.aceShout / 70, 0, 1);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#111';
+      ctx.font = '20px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('ACE', W / 2, court.net + 4);
+      ctx.globalAlpha = 1;
     }
 
     if (score.matchOver) {
