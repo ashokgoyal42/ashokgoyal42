@@ -323,7 +323,7 @@
   }
 
   const state = {
-    player: { x: 220, y: 700, vx: 0, vy: 0 },
+    player: { x: 220, y: 700, vx: 0, vy: 0, stam: 1 },
     cpu:    { x: 220, y: 80,  vx: 0, vy: 0 },
     ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0, trailT: 0 },
     pointer: { x: 220, y: 700, vx: 0, vy: 0, vxPeak: 0, vyPeak: 0, lastT: 0, active: false, lastWhoosh: 0 },
@@ -370,13 +370,16 @@
       const speed = Math.hypot(vxP, vyP);
       const isAce =
         upward > 5 && speed > 5.5 && Math.abs(vxP) < upward * 0.45;
-      const strBoost = 0.6 + state.strength * 0.7;
+      const stamFactor = 0.45 + 0.55 * state.player.stam;
+      const strBoost = (0.6 + state.strength * 0.7) * stamFactor;
       const aceMul = isAce ? 1.45 : 1.0;
       const boost = clamp(upward * 0.55, 0, 2.2);
       state.ball.vy = clamp((-0.9 - boost) * strBoost * aceMul, -3.8, -0.4);
       state.ball.vx = clamp(((Math.random() - 0.5) * 0.3 + vxP * 0.35) * strBoost, -2.2, 2.2);
       state.pointer.vxPeak *= 0.2;
       state.pointer.vyPeak *= 0.2;
+      // Serves drain a bit more than rally; aces drain a lot more.
+      state.player.stam = Math.max(0, state.player.stam - (isAce ? 0.18 : 0.06));
       if (isAce) {
         state.aceShout = 70;
         SND.ace();
@@ -470,6 +473,9 @@
     state.pointer.vxPeak *= decay;
     state.pointer.vyPeak *= decay;
     if (state.aceShout > 0) state.aceShout = Math.max(0, state.aceShout - dt);
+    // Stamina recovery: brisk between points, slow during a live rally.
+    const recoverPerSec = state.ball.live ? 0.04 : 0.18;
+    state.player.stam = Math.min(1, state.player.stam + recoverPerSec * dtMs / 1000);
 
     // Player legal area: anywhere in their half, between the net and the baseline.
     const playerYMin = court.net + 12;
@@ -542,13 +548,17 @@
         const xHit = Math.abs(ball.x - state.player.x) < RACKET_W / 2 + 2;
         if (yHit && xHit) {
           ball.y = state.player.y - RACKET_H;
-          // Strength scales the player's hit power: 0 = limp, 1 = thumping.
-          const strBoost = 0.6 + state.strength * 0.7;
+          // Effective power = inherent strength × current stamina factor.
+          const stamFactor = 0.45 + 0.55 * state.player.stam;
+          const strBoost = (0.6 + state.strength * 0.7) * stamFactor;
           const base = -(Math.max(0.6, Math.abs(ball.vy))) - 0.1;
           ball.vy = clamp((base + state.pointer.vyPeak * 0.7) * strBoost, -5.0, -0.05);
           ball.vx = clamp((state.pointer.vxPeak * 0.7 + state.player.vx * 0.25) * strBoost, -4.0, 4.0);
           state.pointer.vxPeak *= 0.2;
           state.pointer.vyPeak *= 0.2;
+          // Drain: harder shots (more vy) cost more stamina.
+          const drain = 0.04 + Math.min(0.06, Math.abs(ball.vy) / 60);
+          state.player.stam = Math.max(0, state.player.stam - drain);
           ball.owner = 'cpu';
           ball.trailT = 28;
           SND.hitP();
@@ -676,6 +686,22 @@
       ctx.font = '11px ui-monospace, Menlo, monospace';
       ctx.textAlign = 'center';
       ctx.fillText(score.message, W / 2, court.net - 8);
+    }
+
+    // Stamina bar (player) in the bottom margin.
+    {
+      const sx = court.x;
+      const sy = court.y + court.h + 8;
+      const sw = court.w;
+      const sh = 3;
+      ctx.strokeStyle = '#bbb';
+      ctx.strokeRect(sx + 0.5, sy + 0.5, sw, sh);
+      ctx.fillStyle = state.player.stam < 0.25 ? '#777' : '#111';
+      ctx.fillRect(sx + 1, sy + 1, Math.max(0, (sw - 1) * state.player.stam), sh - 1);
+      ctx.fillStyle = '#666';
+      ctx.font = '9px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('stam', sx, sy - 2);
     }
 
     if (state.aceShout > 0) {
