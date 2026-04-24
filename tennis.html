@@ -503,7 +503,7 @@
     const eff = state.efficiency;
     const ball = state.ball;
     const cpuHomeY = court.y + 36;
-    const cpuMaxFwd = court.net - 45;
+    const cpuMaxFwd = court.net - 28;
     const cpuYMin = court.y + 8;
     const cpuYMax = court.net - 12;
     let cpuTargetX = state.cpu.x;
@@ -527,8 +527,8 @@
     const cpuPrevY = state.cpu.y;
     // CPU has a real movement budget per frame; if the ball moves laterally
     // faster than this, the CPU can't get there. No tracking lerp, no RNG.
-    const CPU_MAX_VX = 2.0 + eff * 2.5;   // 2.0 → 4.5 px/frame at 60fps
-    const CPU_MAX_VY = 1.2 + eff * 1.6;   // 1.2 → 2.8
+    const CPU_MAX_VX = 2.0 + eff * 3.5;   // 2.0 → 5.5 px/frame at 60fps
+    const CPU_MAX_VY = 1.2 + eff * 2.0;   // 1.2 → 3.2
     const dxNeeded = cpuTargetX - state.cpu.x;
     const dyNeeded = cpuTargetY - state.cpu.y;
     state.cpu.x += clamp(dxNeeded, -CPU_MAX_VX * dt, CPU_MAX_VX * dt);
@@ -603,9 +603,13 @@
         const xHit = Math.abs(ball.x - state.cpu.x) < RACKET_W / 2 + 2;
         if (yHit && xHit) {
           ball.y = state.cpu.y + RACKET_H;
-          ball.vy = Math.max(0.7, Math.abs(ball.vy)) + 0.1 + eff * 0.3;
-          const aim = (state.player.x > (court.x + court.w / 2) ? -1 : 1) * eff * 1.0;
-          ball.vx = clamp(aim + state.cpu.vx * 0.35 + (Math.random() - 0.5) * (1 - eff) * 0.8, -2.6, 2.6);
+          ball.vy = Math.max(0.7, Math.abs(ball.vy)) + 0.15 + eff * 0.45;
+          // Aim toward the opposite corner; magnitude scales with how far the
+          // player has moved from centre, so corner-stretching is rewarded.
+          const courtCenter = court.x + court.w / 2;
+          const stretch = clamp((state.player.x - courtCenter) / (court.w / 2), -1, 1);
+          const aim = -stretch * (1.4 + eff * 0.6);
+          ball.vx = clamp(aim + state.cpu.vx * 0.4 + (Math.random() - 0.5) * (1 - eff) * 0.5, -3.2, 3.2);
           ball.owner = 'player';
           ball.trailT = 28;
           ball.spin = 0;
