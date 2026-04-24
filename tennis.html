@@ -318,7 +318,7 @@
   const state = {
     player: { x: 220, y: 700, vx: 0, vy: 0 },
     cpu:    { x: 220, y: 80,  vx: 0, vy: 0 },
-    ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0 },
+    ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0, trailT: 0 },
     pointer: { x: 220, y: 700, vx: 0, vy: 0, vxPeak: 0, vyPeak: 0, lastT: 0, active: false, lastWhoosh: 0 },
     tPrev:  performance.now(),
     efficiency: parseFloat(diffEl.value),
@@ -361,6 +361,7 @@
     }
     state.ball.live = true;
     state.ball.prevY = state.ball.y;
+    state.ball.trailT = 28;
     score.message = '';
     SND.serve();
   }
@@ -492,6 +493,7 @@
       ball.y += ball.vy * dt;
       ball.vx *= Math.pow(0.999, dt);
       ball.vy *= Math.pow(0.9995, dt);
+      if (ball.trailT > 0) ball.trailT -= dt;
 
       // --- racket collisions ---
       // player (bottom): swept check — the racket itself may have moved during the frame
@@ -513,6 +515,7 @@
           state.pointer.vxPeak *= 0.2;
           state.pointer.vyPeak *= 0.2;
           ball.owner = 'cpu';
+          ball.trailT = 28;
           SND.hitP();
         }
       }
@@ -532,6 +535,7 @@
             const aim = (state.player.x > (court.x + court.w / 2) ? -1 : 1) * eff * 1.0;
             ball.vx = clamp(aim + state.cpu.vx * 0.35 + (Math.random() - 0.5) * (1 - eff) * 0.8, -2.6, 2.6);
             ball.owner = 'player';
+            ball.trailT = 28;
             SND.hitC();
           }
         }
@@ -611,16 +615,26 @@
       ctx.fillRect(Math.round(rx) - 1, Math.round(dotY) - 1, 3, 3);
     }
 
-    // ball + slow-mo trail
-    const bx = Math.round(state.ball.x) - 2;
-    const by = Math.round(state.ball.y) - 2;
+    // ball
+    const BALL = 6;
+    const bcx = Math.round(state.ball.x);
+    const bcy = Math.round(state.ball.y);
     ctx.fillStyle = '#111';
-    ctx.fillRect(bx, by, 4, 4);
-    ctx.globalAlpha = 0.25;
-    ctx.fillRect(bx - Math.sign(state.ball.vx) * 2, by - Math.sign(state.ball.vy) * 2, 3, 3);
-    ctx.globalAlpha = 0.12;
-    ctx.fillRect(bx - Math.sign(state.ball.vx) * 5, by - Math.sign(state.ball.vy) * 5, 2, 2);
-    ctx.globalAlpha = 1;
+    ctx.fillRect(bcx - BALL / 2, bcy - BALL / 2, BALL, BALL);
+    // post-hit trajectory: two dots behind the ball along its travel direction
+    if (state.ball.live && state.ball.trailT > 0) {
+      const sp = Math.hypot(state.ball.vx, state.ball.vy);
+      if (sp > 0.05) {
+        const ux = -state.ball.vx / sp;
+        const uy = -state.ball.vy / sp;
+        const fade = clamp(state.ball.trailT / 28, 0, 1);
+        ctx.globalAlpha = 0.55 * fade;
+        ctx.fillRect(Math.round(bcx + ux * 7) - 1, Math.round(bcy + uy * 7) - 1, 3, 3);
+        ctx.globalAlpha = 0.3 * fade;
+        ctx.fillRect(Math.round(bcx + ux * 14) - 1, Math.round(bcy + uy * 14) - 1, 2, 2);
+        ctx.globalAlpha = 1;
+      }
+    }
 
     if (score.message) {
       ctx.fillStyle = '#111';
