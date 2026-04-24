@@ -69,7 +69,7 @@
     -webkit-appearance: none;
     appearance: none;
     background: transparent;
-    width: 160px;
+    width: 100px;
     height: 18px;
   }
   input[type=range]::-webkit-slider-runnable-track {
@@ -108,7 +108,11 @@
       <input id="diff" type="range" min="0" max="1" step="0.01" value="0.45">
       <span id="effval">0.45</span>
     </div>
-    <div id="hint">swipe to hit · flick up = power</div>
+    <div class="group">
+      <span>str</span>
+      <input id="str" type="range" min="0" max="1" step="0.01" value="0.5">
+      <span id="strval">0.50</span>
+    </div>
   </div>
 </div>
 <script>
@@ -119,6 +123,8 @@
   const gamesEl = document.getElementById('games');
   const diffEl = document.getElementById('diff');
   const effEl = document.getElementById('effval');
+  const strEl = document.getElementById('str');
+  const strvalEl = document.getElementById('strval');
   const serveBtn = document.getElementById('serve');
 
   // --- Sound ---
@@ -147,6 +153,7 @@
     hitP:   () => blip(880, 0.04, 0.05),
     hitC:   () => blip(660, 0.04, 0.05),
     serve:  () => { blip(520, 0.04, 0.04); setTimeout(() => blip(1040, 0.05, 0.05), 40); },
+    ace:    () => { blip(880, 0.06, 0.07); setTimeout(() => blip(1320, 0.08, 0.07), 60); setTimeout(() => blip(1980, 0.18, 0.07), 140); },
     whoosh: () => blip(300, 0.08, 0.02, 'triangle'),
     win:    () => { blip(900, 0.08, 0.06); setTimeout(() => blip(1300, 0.1, 0.05), 80); },
     loss:   () => blip(220, 0.18, 0.04, 'triangle'),
@@ -322,6 +329,8 @@
     pointer: { x: 220, y: 700, vx: 0, vy: 0, vxPeak: 0, vyPeak: 0, lastT: 0, active: false, lastWhoosh: 0 },
     tPrev:  performance.now(),
     efficiency: parseFloat(diffEl.value),
+    strength: parseFloat(strEl.value),
+    aceShout: 0,
     autoServeT: null,
   };
 
@@ -329,6 +338,11 @@
   diffEl.addEventListener('input', () => {
     state.efficiency = parseFloat(diffEl.value);
     effEl.textContent = state.efficiency.toFixed(2);
+  });
+  strvalEl.textContent = state.strength.toFixed(2);
+  strEl.addEventListener('input', () => {
+    state.strength = parseFloat(strEl.value);
+    strvalEl.textContent = state.strength.toFixed(2);
   });
 
   function resetServe(who) {
@@ -348,12 +362,25 @@
   function serve() {
     if (state.ball.live || score.matchOver) return;
     if (state.ball.owner === 'player') {
-      // Serve uses the flick memory too, with a bigger boost range.
-      const boost = clamp(-state.pointer.vyPeak * 0.55, 0, 2.0);
-      state.ball.vy = clamp(-0.9 - boost, -3.0, -0.4);
-      state.ball.vx = clamp((Math.random() - 0.5) * 0.3 + state.pointer.vxPeak * 0.35, -1.8, 1.8);
+      // Player serve: flick-driven power, strength-scaled. A long, fast,
+      // mostly-vertical flick triggers an ace boost.
+      const vxP = state.pointer.vxPeak;
+      const vyP = state.pointer.vyPeak;
+      const upward = -vyP;
+      const speed = Math.hypot(vxP, vyP);
+      const isAce =
+        upward > 5 && speed > 5.5 && Math.abs(vxP) < upward * 0.45;
+      const strBoost = 0.6 + state.strength * 0.7;
+      const aceMul = isAce ? 1.45 : 1.0;
+      const boost = clamp(upward * 0.55, 0, 2.2);
+      state.ball.vy = clamp((-0.9 - boost) * strBoost * aceMul, -3.8, -0.4);
+      state.ball.vx = clamp(((Math.random() - 0.5) * 0.3 + vxP * 0.35) * strBoost, -2.2, 2.2);
       state.pointer.vxPeak *= 0.2;
       state.pointer.vyPeak *= 0.2;
+      if (isAce) {
+        state.aceShout = 70;
+        SND.ace();
+      }
     } else {
       const eff = state.efficiency;
       state.ball.vy = 0.9 + eff * 0.5;
@@ -442,6 +469,7 @@
     const decay = Math.pow(0.94, dt);
     state.pointer.vxPeak *= decay;
     state.pointer.vyPeak *= decay;
+    if (state.aceShout > 0) state.aceShout = Math.max(0, state.aceShout - dt);
 
     // Player legal area: anywhere in their half, between the net and the baseline.
     const playerYMin = court.net + 12;
@@ -514,12 +542,11 @@
         const xHit = Math.abs(ball.x - state.player.x) < RACKET_W / 2 + 2;
         if (yHit && xHit) {
           ball.y = state.player.y - RACKET_H;
+          // Strength scales the player's hit power: 0 = limp, 1 = thumping.
+          const strBoost = 0.6 + state.strength * 0.7;
           const base = -(Math.max(0.6, Math.abs(ball.vy))) - 0.1;
-          // Swipe up (vy<0) adds forward power; flick memory captures the peak
-          // of the thumb motion instead of only the instantaneous velocity.
-          ball.vy = clamp(base + state.pointer.vyPeak * 0.7, -4.2, -0.05);
-          ball.vx = clamp(state.pointer.vxPeak * 0.7 + state.player.vx * 0.25, -3.6, 3.6);
-          // Consume the peak so the next shot reads a fresh flick.
+          ball.vy = clamp((base + state.pointer.vyPeak * 0.7) * strBoost, -5.0, -0.05);
+          ball.vx = clamp((state.pointer.vxPeak * 0.7 + state.player.vx * 0.25) * strBoost, -4.0, 4.0);
           state.pointer.vxPeak *= 0.2;
           state.pointer.vyPeak *= 0.2;
           ball.owner = 'cpu';
@@ -649,6 +676,16 @@
       ctx.font = '11px ui-monospace, Menlo, monospace';
       ctx.textAlign = 'center';
       ctx.fillText(score.message, W / 2, court.net - 8);
+    }
+
+    if (state.aceShout > 0) {
+      const a = clamp(state.aceShout / 70, 0, 1);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#111';
+      ctx.font = '20px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('ACE', W / 2, court.net + 4);
+      ctx.globalAlpha = 1;
     }
 
     if (score.matchOver) {
