@@ -166,6 +166,7 @@
         setTimeout(() => blip(freqs[i], 0.16, 0.07), d);
       });
     },
+    wall:   () => blip(420, 0.04, 0.04, 'square'),
   };
 
   // Fit canvas to its CSS box for a crisp portrait pixel surface.
@@ -586,13 +587,15 @@
         }
       }
 
-      // --- side-out: ball leaves the sidelines = last hitter missed ---
-      if (ball.live && (ball.x < court.x + 1 || ball.x > court.x + court.w - 1)) {
-        // ball.owner is the next-to-hit player; winner of the point is that player.
-        const winner = ball.owner === 'player' ? 'p' : 'c';
-        (winner === 'p' ? SND.win : SND.loss)();
-        awardPoint(winner);
-        afterPoint();
+      // --- side-wall bounce: ball reflects off the sidelines (slomo tennis rule) ---
+      if (ball.live && ball.x <= court.x + 2) {
+        ball.x = court.x + 2;
+        ball.vx = Math.abs(ball.vx);
+        SND.wall();
+      } else if (ball.live && ball.x >= court.x + court.w - 2) {
+        ball.x = court.x + court.w - 2;
+        ball.vx = -Math.abs(ball.vx);
+        SND.wall();
       }
 
       // --- baseline out: went past a racket = that player lost the point ---
