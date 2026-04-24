@@ -503,7 +503,7 @@
     const eff = state.efficiency;
     const ball = state.ball;
     const cpuHomeY = court.y + 36;
-    const cpuMaxFwd = court.net - 18;
+    const cpuMaxFwd = court.net - 45;
     const cpuYMin = court.y + 8;
     const cpuYMax = court.net - 12;
     let cpuTargetX = state.cpu.x;
@@ -523,7 +523,7 @@
     }
     const cpuPrevX = state.cpu.x;
     const cpuPrevY = state.cpu.y;
-    const cpuLerp = 0.03 + eff * 0.22;
+    const cpuLerp = 0.03 + eff * 0.18;
     state.cpu.x += (cpuTargetX - state.cpu.x) * Math.min(1, cpuLerp * dt);
     state.cpu.y += (cpuTargetY - state.cpu.y) * Math.min(1, cpuLerp * 0.7 * dt);
     state.cpu.x = clamp(state.cpu.x, rxMin, rxMax);
@@ -560,7 +560,9 @@
           const stamFactor = 0.45 + 0.55 * state.player.stam;
           const strBoost = (0.6 + state.strength * 0.7) * stamFactor;
           const base = -(Math.max(0.6, Math.abs(ball.vy))) - 0.1;
-          ball.vy = clamp((base + state.pointer.vyPeak * 0.7) * strBoost, -5.0, -0.05);
+          // Minimum forward speed: keep the ball moving toward the CPU side so
+          // a weak/downward swipe can't trap it bouncing in the player's half.
+          ball.vy = clamp((base + state.pointer.vyPeak * 0.7) * strBoost, -5.0, -0.4);
           ball.vx = clamp((state.pointer.vxPeak * 0.7 + state.player.vx * 0.25) * strBoost, -4.0, 4.0);
           state.pointer.vxPeak *= 0.2;
           state.pointer.vyPeak *= 0.2;
@@ -568,7 +570,7 @@
           const innerZoneBottom = court.y + court.h * 0.72;
           const inForward = state.player.y < innerZoneBottom;
           if (inForward) {
-            ball.vy = clamp(ball.vy * 1.2, -5.6, -0.05);
+            ball.vy = clamp(ball.vy * 1.2, -5.6, -0.4);
             ball.vx *= 0.65;
             ball.spin = 0;
           } else {
@@ -593,7 +595,7 @@
         const yHit = !(bYmax < rYmin || bYmin > rYmax);
         const xHit = Math.abs(ball.x - state.cpu.x) < RACKET_W / 2 + 2;
         if (yHit && xHit) {
-          const miss = Math.random() > (0.55 + eff * 0.45);
+          const miss = Math.random() > (0.45 + eff * 0.4);
           if (!miss) {
             ball.y = state.cpu.y + RACKET_H;
             ball.vy = Math.max(0.7, Math.abs(ball.vy)) + 0.1 + eff * 0.3;
