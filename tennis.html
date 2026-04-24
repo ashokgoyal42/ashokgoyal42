@@ -461,26 +461,39 @@
     state.player.vx = (state.player.x - prevPX) / Math.max(dt, 0.001);
     state.player.vy = (state.player.y - prevPY) / Math.max(dt, 0.001);
 
-    // CPU AI: side-to-side tracking only. Keeping y fixed at the baseline
-    // avoids the "drifts back as the ball approaches" bug; we can add
-    // forward stepping later if it adds something tactically.
+    // CPU AI: attack — come forward when the ball is incoming, partially
+    // retreat while it's going away. Forward distance scales with eff.
+    // For CPU at the top, "forward" means INCREASING y (toward the net).
     const eff = state.efficiency;
     const ball = state.ball;
     const cpuHomeY = court.y + 36;
-    state.cpu.y = cpuHomeY;
+    const cpuMaxFwd = court.net - 18;
+    const cpuYMin = court.y + 8;
+    const cpuYMax = court.net - 12;
     let cpuTargetX = state.cpu.x;
-    if (ball.live && ball.vy < 0) {
-      const t = (state.cpu.y - ball.y) / ball.vy;
-      cpuTargetX = ball.x + ball.vx * t;
-      cpuTargetX += (Math.random() - 0.5) * (1 - eff) * 160;
+    let cpuTargetY = cpuHomeY;
+    if (ball.live) {
+      if (ball.vy < 0) {
+        cpuTargetY = cpuHomeY + (cpuMaxFwd - cpuHomeY) * eff;
+      } else {
+        cpuTargetY = cpuHomeY + (cpuMaxFwd - cpuHomeY) * eff * 0.3;
+      }
+      // Predict where the ball will be at the target intercept line.
+      if (ball.vy < 0) {
+        const t = (cpuTargetY - ball.y) / ball.vy;
+        cpuTargetX = ball.x + ball.vx * t;
+        cpuTargetX += (Math.random() - 0.5) * (1 - eff) * 160;
+      }
     }
     const cpuPrevX = state.cpu.x;
     const cpuPrevY = state.cpu.y;
     const cpuLerp = 0.03 + eff * 0.22;
     state.cpu.x += (cpuTargetX - state.cpu.x) * Math.min(1, cpuLerp * dt);
+    state.cpu.y += (cpuTargetY - state.cpu.y) * Math.min(1, cpuLerp * 0.7 * dt);
     state.cpu.x = clamp(state.cpu.x, rxMin, rxMax);
+    state.cpu.y = clamp(state.cpu.y, cpuYMin, cpuYMax);
     state.cpu.vx = (state.cpu.x - cpuPrevX) / Math.max(dt, 0.001);
-    state.cpu.vy = 0;
+    state.cpu.vy = (state.cpu.y - cpuPrevY) / Math.max(dt, 0.001);
 
     if (ball.live) {
       const prevY = ball.y;
