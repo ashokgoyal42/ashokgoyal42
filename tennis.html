@@ -311,7 +311,7 @@
     player: { x: 220, y: 700, vx: 0, vy: 0 },
     cpu:    { x: 220, y: 80,  vx: 0, vy: 0 },
     ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0 },
-    pointer: { x: 220, y: 700, vx: 0, vy: 0, lastT: 0, active: false },
+    pointer: { x: 220, y: 700, vx: 0, vy: 0, vxPeak: 0, vyPeak: 0, lastT: 0, active: false },
     tPrev:  performance.now(),
     efficiency: parseFloat(diffEl.value),
     autoServeT: null,
@@ -340,10 +340,12 @@
   function serve() {
     if (state.ball.live || score.matchOver) return;
     if (state.ball.owner === 'player') {
-      // Slight swipe-sensitive power on serve.
-      const boost = clamp(-state.pointer.vy * 0.35, 0, 1.2);
-      state.ball.vy = clamp(-0.9 - boost, -2.6, -0.4);
-      state.ball.vx = clamp((Math.random() - 0.5) * 0.3 + state.pointer.vx * 0.2, -1.5, 1.5);
+      // Serve uses the flick memory too, with a bigger boost range.
+      const boost = clamp(-state.pointer.vyPeak * 0.55, 0, 2.0);
+      state.ball.vy = clamp(-0.9 - boost, -3.0, -0.4);
+      state.ball.vx = clamp((Math.random() - 0.5) * 0.3 + state.pointer.vxPeak * 0.35, -1.8, 1.8);
+      state.pointer.vxPeak *= 0.2;
+      state.pointer.vyPeak *= 0.2;
     } else {
       const eff = state.efficiency;
       state.ball.vy = 0.9 + eff * 0.5;
@@ -381,8 +383,12 @@
     const p = canvasCoords(e);
     const now = performance.now();
     const dt = Math.max(1, now - state.pointer.lastT);
-    state.pointer.vx = (p.x - state.pointer.x) / dt * 16;
-    state.pointer.vy = (p.y - state.pointer.y) / dt * 16;
+    state.pointer.vx = (p.x - state.pointer.x) / dt * 22;
+    state.pointer.vy = (p.y - state.pointer.y) / dt * 22;
+    // Flick memory: hold onto the strongest recent swipe so the shot
+    // captures the thumb even if the finger is already slowing at contact.
+    if (Math.abs(state.pointer.vx) > Math.abs(state.pointer.vxPeak)) state.pointer.vxPeak = state.pointer.vx;
+    if (Math.abs(state.pointer.vy) > Math.abs(state.pointer.vyPeak)) state.pointer.vyPeak = state.pointer.vy;
     state.pointer.x = p.x;
     state.pointer.y = p.y;
     state.pointer.lastT = now;
@@ -417,6 +423,10 @@
     const dtMs = Math.min(50, now - state.tPrev);
     state.tPrev = now;
     const dt = dtMs / 16.67;
+    // Flick memory decays: retain ~55% after 200ms.
+    const decay = Math.pow(0.94, dt);
+    state.pointer.vxPeak *= decay;
+    state.pointer.vyPeak *= decay;
 
     // Player legal area: anywhere in their half, between the net and the baseline.
     const playerYMin = court.net + 12;
@@ -481,9 +491,13 @@
         if (yHit && xHit) {
           ball.y = state.player.y - RACKET_H;
           const base = -(Math.max(0.6, Math.abs(ball.vy))) - 0.1;
-          // Swipe up (vy<0) adds forward power; swipe down weakens the shot.
-          ball.vy = clamp(base + state.pointer.vy * 0.45, -3.2, -0.05);
-          ball.vx = clamp(state.pointer.vx * 0.45 + state.player.vx * 0.25, -2.8, 2.8);
+          // Swipe up (vy<0) adds forward power; flick memory captures the peak
+          // of the thumb motion instead of only the instantaneous velocity.
+          ball.vy = clamp(base + state.pointer.vyPeak * 0.7, -4.2, -0.05);
+          ball.vx = clamp(state.pointer.vxPeak * 0.7 + state.player.vx * 0.25, -3.6, 3.6);
+          // Consume the peak so the next shot reads a fresh flick.
+          state.pointer.vxPeak *= 0.2;
+          state.pointer.vyPeak *= 0.2;
           ball.owner = 'cpu';
           SND.hitP();
         }
