@@ -144,13 +144,21 @@
     o.stop(t + dur + 0.02);
   }
   const SND = {
-    hitP: () => blip(880, 0.04, 0.05),
-    hitC: () => blip(660, 0.04, 0.05),
-    win:  () => { blip(900, 0.08, 0.06); setTimeout(() => blip(1300, 0.1, 0.05), 80); },
-    loss: () => blip(220, 0.18, 0.04, 'triangle'),
-    net:  () => blip(180, 0.1, 0.04, 'triangle'),
-    game: () => { blip(1200, 0.06, 0.06); setTimeout(() => blip(1600, 0.1, 0.06), 90); },
-    set:  () => { blip(900, 0.1, 0.06); setTimeout(() => blip(1300, 0.1, 0.06), 120); setTimeout(() => blip(1700, 0.14, 0.06), 260); },
+    hitP:   () => blip(880, 0.04, 0.05),
+    hitC:   () => blip(660, 0.04, 0.05),
+    serve:  () => { blip(520, 0.04, 0.04); setTimeout(() => blip(1040, 0.05, 0.05), 40); },
+    whoosh: () => blip(300, 0.08, 0.02, 'triangle'),
+    win:    () => { blip(900, 0.08, 0.06); setTimeout(() => blip(1300, 0.1, 0.05), 80); },
+    loss:   () => blip(220, 0.18, 0.04, 'triangle'),
+    net:    () => blip(180, 0.1, 0.04, 'triangle'),
+    game:   () => { blip(1200, 0.06, 0.06); setTimeout(() => blip(1600, 0.1, 0.06), 90); },
+    set:    () => { blip(900, 0.1, 0.06); setTimeout(() => blip(1300, 0.1, 0.06), 120); setTimeout(() => blip(1700, 0.14, 0.06), 260); },
+    match:  () => {
+      [0, 140, 260, 420, 640].forEach((d, i) => {
+        const freqs = [660, 880, 1100, 1320, 1760];
+        setTimeout(() => blip(freqs[i], 0.16, 0.07), d);
+      });
+    },
   };
 
   // Fit canvas to its CSS box for a crisp portrait pixel surface.
@@ -184,8 +192,8 @@
     }
   }
 
-  const RACKET_W = 44;
-  const RACKET_H = 4;
+  const RACKET_W = 36;
+  const RACKET_H = 10;
 
   // --- Tennis scoring state ---
   const score = {
@@ -237,7 +245,7 @@
     if (s >= SETS_TO_WIN) {
       score.matchOver = winner === 'p' ? 'player' : 'cpu';
       score.message = winner === 'p' ? 'match: you' : 'match: cpu';
-      SND.set();
+      SND.match();
     } else {
       score.message = winner === 'p' ? 'set: you' : 'set: cpu';
       SND.set();
@@ -311,7 +319,7 @@
     player: { x: 220, y: 700, vx: 0, vy: 0 },
     cpu:    { x: 220, y: 80,  vx: 0, vy: 0 },
     ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0 },
-    pointer: { x: 220, y: 700, vx: 0, vy: 0, lastT: 0, active: false },
+    pointer: { x: 220, y: 700, vx: 0, vy: 0, vxPeak: 0, vyPeak: 0, lastT: 0, active: false, lastWhoosh: 0 },
     tPrev:  performance.now(),
     efficiency: parseFloat(diffEl.value),
     autoServeT: null,
@@ -340,10 +348,12 @@
   function serve() {
     if (state.ball.live || score.matchOver) return;
     if (state.ball.owner === 'player') {
-      // Slight swipe-sensitive power on serve.
-      const boost = clamp(-state.pointer.vy * 0.35, 0, 1.2);
-      state.ball.vy = clamp(-0.9 - boost, -2.6, -0.4);
-      state.ball.vx = clamp((Math.random() - 0.5) * 0.3 + state.pointer.vx * 0.2, -1.5, 1.5);
+      // Serve uses the flick memory too, with a bigger boost range.
+      const boost = clamp(-state.pointer.vyPeak * 0.55, 0, 2.0);
+      state.ball.vy = clamp(-0.9 - boost, -3.0, -0.4);
+      state.ball.vx = clamp((Math.random() - 0.5) * 0.3 + state.pointer.vxPeak * 0.35, -1.8, 1.8);
+      state.pointer.vxPeak *= 0.2;
+      state.pointer.vyPeak *= 0.2;
     } else {
       const eff = state.efficiency;
       state.ball.vy = 0.9 + eff * 0.5;
@@ -352,6 +362,7 @@
     state.ball.live = true;
     state.ball.prevY = state.ball.y;
     score.message = '';
+    SND.serve();
   }
   serveBtn.addEventListener('click', () => {
     ensureAudio();
@@ -381,8 +392,17 @@
     const p = canvasCoords(e);
     const now = performance.now();
     const dt = Math.max(1, now - state.pointer.lastT);
-    state.pointer.vx = (p.x - state.pointer.x) / dt * 16;
-    state.pointer.vy = (p.y - state.pointer.y) / dt * 16;
+    state.pointer.vx = (p.x - state.pointer.x) / dt * 22;
+    state.pointer.vy = (p.y - state.pointer.y) / dt * 22;
+    // Flick memory: hold onto the strongest recent swipe so the shot
+    // captures the thumb even if the finger is already slowing at contact.
+    if (Math.abs(state.pointer.vx) > Math.abs(state.pointer.vxPeak)) state.pointer.vxPeak = state.pointer.vx;
+    if (Math.abs(state.pointer.vy) > Math.abs(state.pointer.vyPeak)) state.pointer.vyPeak = state.pointer.vy;
+    const speed = Math.hypot(state.pointer.vx, state.pointer.vy);
+    if (speed > 3.5 && now - state.pointer.lastWhoosh > 220) {
+      state.pointer.lastWhoosh = now;
+      SND.whoosh();
+    }
     state.pointer.x = p.x;
     state.pointer.y = p.y;
     state.pointer.lastT = now;
@@ -417,6 +437,10 @@
     const dtMs = Math.min(50, now - state.tPrev);
     state.tPrev = now;
     const dt = dtMs / 16.67;
+    // Flick memory decays: retain ~55% after 200ms.
+    const decay = Math.pow(0.94, dt);
+    state.pointer.vxPeak *= decay;
+    state.pointer.vyPeak *= decay;
 
     // Player legal area: anywhere in their half, between the net and the baseline.
     const playerYMin = court.net + 12;
@@ -436,20 +460,31 @@
     state.player.vx = (state.player.x - prevPX) / Math.max(dt, 0.001);
     state.player.vy = (state.player.y - prevPY) / Math.max(dt, 0.001);
 
-    // CPU AI (stays at its baseline for now; step 3 will flesh out legal serves).
+    // CPU 2D movement in its own half.
     const eff = state.efficiency;
     const ball = state.ball;
-    let cpuTarget = state.cpu.x;
+    const cpuYMin = court.y + 8;
+    const cpuYMax = court.net - 12;
+    const cpuHomeY = court.y + 36;
+    let cpuTargetX = state.cpu.x;
+    let cpuTargetY = cpuHomeY;
     if (ball.live && ball.vy < 0) {
       const t = (state.cpu.y - ball.y) / ball.vy;
-      cpuTarget = ball.x + ball.vx * t;
-      cpuTarget += (Math.random() - 0.5) * (1 - eff) * 160;
+      cpuTargetX = ball.x + ball.vx * t;
+      cpuTargetX += (Math.random() - 0.5) * (1 - eff) * 160;
+      // Step forward to meet the ball when the ball is close; stronger CPUs step further.
+      const meet = clamp(ball.y + 20, cpuYMin, cpuYMax);
+      cpuTargetY = cpuHomeY + (meet - cpuHomeY) * eff;
     }
     const cpuPrevX = state.cpu.x;
+    const cpuPrevY = state.cpu.y;
     const cpuLerp = 0.03 + eff * 0.22;
-    state.cpu.x += (cpuTarget - state.cpu.x) * Math.min(1, cpuLerp * dt);
+    state.cpu.x += (cpuTargetX - state.cpu.x) * Math.min(1, cpuLerp * dt);
+    state.cpu.y += (cpuTargetY - state.cpu.y) * Math.min(1, cpuLerp * 0.8 * dt);
     state.cpu.x = clamp(state.cpu.x, rxMin, rxMax);
+    state.cpu.y = clamp(state.cpu.y, cpuYMin, cpuYMax);
     state.cpu.vx = (state.cpu.x - cpuPrevX) / Math.max(dt, 0.001);
+    state.cpu.vy = (state.cpu.y - cpuPrevY) / Math.max(dt, 0.001);
 
     if (ball.live) {
       const prevY = ball.y;
@@ -470,16 +505,26 @@
         if (yHit && xHit) {
           ball.y = state.player.y - RACKET_H;
           const base = -(Math.max(0.6, Math.abs(ball.vy))) - 0.1;
-          // Swipe up (vy<0) adds forward power; swipe down weakens the shot.
-          ball.vy = clamp(base + state.pointer.vy * 0.45, -3.2, -0.05);
-          ball.vx = clamp(state.pointer.vx * 0.45 + state.player.vx * 0.25, -2.8, 2.8);
+          // Swipe up (vy<0) adds forward power; flick memory captures the peak
+          // of the thumb motion instead of only the instantaneous velocity.
+          ball.vy = clamp(base + state.pointer.vyPeak * 0.7, -4.2, -0.05);
+          ball.vx = clamp(state.pointer.vxPeak * 0.7 + state.player.vx * 0.25, -3.6, 3.6);
+          // Consume the peak so the next shot reads a fresh flick.
+          state.pointer.vxPeak *= 0.2;
+          state.pointer.vyPeak *= 0.2;
           ball.owner = 'cpu';
           SND.hitP();
         }
       }
-      // cpu (top)
-      if (ball.live && ball.vy < 0 && ball.y <= state.cpu.y + RACKET_H && ball.y >= state.cpu.y - 4) {
-        if (Math.abs(ball.x - state.cpu.x) < RACKET_W / 2 + 2) {
+      // cpu (top): swept check too
+      if (ball.live && ball.vy < 0) {
+        const rYmin = Math.min(cpuPrevY, state.cpu.y) - 4;
+        const rYmax = Math.max(cpuPrevY, state.cpu.y) + RACKET_H;
+        const bYmin = Math.min(prevY, ball.y);
+        const bYmax = Math.max(prevY, ball.y);
+        const yHit = !(bYmax < rYmin || bYmin > rYmax);
+        const xHit = Math.abs(ball.x - state.cpu.x) < RACKET_W / 2 + 2;
+        if (yHit && xHit) {
           const miss = Math.random() > (0.55 + eff * 0.45);
           if (!miss) {
             ball.y = state.cpu.y + RACKET_H;
@@ -499,18 +544,6 @@
         (winner === 'p' ? SND.win : SND.loss)();
         awardPoint(winner);
         afterPoint();
-      }
-
-      // --- net fail: ball crosses the net with too little forward speed ---
-      if (ball.live) {
-        const crossedNet = (prevY - court.net) * (ball.y - court.net) <= 0 && prevY !== ball.y;
-        if (crossedNet && Math.abs(ball.vy) < 0.25) {
-          SND.net();
-          ball.vy = 0; ball.vx = 0; ball.live = false;
-          const winner = ball.owner === 'player' ? 'p' : 'c';
-          awardPoint(winner);
-          afterPoint();
-        }
       }
 
       // --- baseline out: went past a racket = that player lost the point ---
@@ -565,8 +598,8 @@
     ctx.stroke();
     ctx.restore();
 
-    drawRacket(state.cpu.x, state.cpu.y);
-    drawRacket(state.player.x, state.player.y);
+    drawRacket(state.cpu.x, state.cpu.y, 'top');
+    drawRacket(state.player.x, state.player.y, 'bottom');
 
     // server indicator: small dot just outside the court beside the server's racket
     {
@@ -613,9 +646,27 @@
     }
   }
 
-  function drawRacket(cx, cy) {
+  function drawRacket(cx, cy, side) {
+    // Oval head + short handle pointing toward own baseline.
+    const headHalfW = 18, headHalfH = 5;
+    ctx.strokeStyle = '#111';
     ctx.fillStyle = '#111';
-    ctx.fillRect(Math.round(cx - RACKET_W / 2), Math.round(cy - RACKET_H / 2), RACKET_W, RACKET_H);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, headHalfW, headHalfH, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // a single string line for character
+    ctx.beginPath();
+    ctx.moveTo(Math.round(cx - headHalfW + 3) + 0.5, Math.round(cy) + 0.5);
+    ctx.lineTo(Math.round(cx + headHalfW - 3) + 0.5, Math.round(cy) + 0.5);
+    ctx.stroke();
+    // handle toward own side
+    const handleLen = 9;
+    const hx = Math.round(cx) - 1;
+    const hy = side === 'bottom'
+      ? Math.round(cy + headHalfH)
+      : Math.round(cy - headHalfH) - handleLen;
+    ctx.fillRect(hx, hy, 2, handleLen);
   }
 
   // init
