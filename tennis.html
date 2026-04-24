@@ -461,31 +461,26 @@
     state.player.vx = (state.player.x - prevPX) / Math.max(dt, 0.001);
     state.player.vy = (state.player.y - prevPY) / Math.max(dt, 0.001);
 
-    // CPU 2D movement in its own half.
+    // CPU AI: side-to-side tracking only. Keeping y fixed at the baseline
+    // avoids the "drifts back as the ball approaches" bug; we can add
+    // forward stepping later if it adds something tactically.
     const eff = state.efficiency;
     const ball = state.ball;
-    const cpuYMin = court.y + 8;
-    const cpuYMax = court.net - 12;
     const cpuHomeY = court.y + 36;
+    state.cpu.y = cpuHomeY;
     let cpuTargetX = state.cpu.x;
-    let cpuTargetY = cpuHomeY;
     if (ball.live && ball.vy < 0) {
       const t = (state.cpu.y - ball.y) / ball.vy;
       cpuTargetX = ball.x + ball.vx * t;
       cpuTargetX += (Math.random() - 0.5) * (1 - eff) * 160;
-      // Step forward to meet the ball when the ball is close; stronger CPUs step further.
-      const meet = clamp(ball.y + 20, cpuYMin, cpuYMax);
-      cpuTargetY = cpuHomeY + (meet - cpuHomeY) * eff;
     }
     const cpuPrevX = state.cpu.x;
     const cpuPrevY = state.cpu.y;
     const cpuLerp = 0.03 + eff * 0.22;
     state.cpu.x += (cpuTargetX - state.cpu.x) * Math.min(1, cpuLerp * dt);
-    state.cpu.y += (cpuTargetY - state.cpu.y) * Math.min(1, cpuLerp * 0.8 * dt);
     state.cpu.x = clamp(state.cpu.x, rxMin, rxMax);
-    state.cpu.y = clamp(state.cpu.y, cpuYMin, cpuYMax);
     state.cpu.vx = (state.cpu.x - cpuPrevX) / Math.max(dt, 0.001);
-    state.cpu.vy = (state.cpu.y - cpuPrevY) / Math.max(dt, 0.001);
+    state.cpu.vy = 0;
 
     if (ball.live) {
       const prevY = ball.y;
