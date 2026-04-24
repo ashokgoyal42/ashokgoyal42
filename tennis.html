@@ -184,8 +184,8 @@
     }
   }
 
-  const RACKET_W = 44;
-  const RACKET_H = 4;
+  const RACKET_W = 36;
+  const RACKET_H = 10;
 
   // --- Tennis scoring state ---
   const score = {
@@ -436,20 +436,31 @@
     state.player.vx = (state.player.x - prevPX) / Math.max(dt, 0.001);
     state.player.vy = (state.player.y - prevPY) / Math.max(dt, 0.001);
 
-    // CPU AI (stays at its baseline for now; step 3 will flesh out legal serves).
+    // CPU 2D movement in its own half.
     const eff = state.efficiency;
     const ball = state.ball;
-    let cpuTarget = state.cpu.x;
+    const cpuYMin = court.y + 8;
+    const cpuYMax = court.net - 12;
+    const cpuHomeY = court.y + 36;
+    let cpuTargetX = state.cpu.x;
+    let cpuTargetY = cpuHomeY;
     if (ball.live && ball.vy < 0) {
       const t = (state.cpu.y - ball.y) / ball.vy;
-      cpuTarget = ball.x + ball.vx * t;
-      cpuTarget += (Math.random() - 0.5) * (1 - eff) * 160;
+      cpuTargetX = ball.x + ball.vx * t;
+      cpuTargetX += (Math.random() - 0.5) * (1 - eff) * 160;
+      // Step forward to meet the ball when the ball is close; stronger CPUs step further.
+      const meet = clamp(ball.y + 20, cpuYMin, cpuYMax);
+      cpuTargetY = cpuHomeY + (meet - cpuHomeY) * eff;
     }
     const cpuPrevX = state.cpu.x;
+    const cpuPrevY = state.cpu.y;
     const cpuLerp = 0.03 + eff * 0.22;
-    state.cpu.x += (cpuTarget - state.cpu.x) * Math.min(1, cpuLerp * dt);
+    state.cpu.x += (cpuTargetX - state.cpu.x) * Math.min(1, cpuLerp * dt);
+    state.cpu.y += (cpuTargetY - state.cpu.y) * Math.min(1, cpuLerp * 0.8 * dt);
     state.cpu.x = clamp(state.cpu.x, rxMin, rxMax);
+    state.cpu.y = clamp(state.cpu.y, cpuYMin, cpuYMax);
     state.cpu.vx = (state.cpu.x - cpuPrevX) / Math.max(dt, 0.001);
+    state.cpu.vy = (state.cpu.y - cpuPrevY) / Math.max(dt, 0.001);
 
     if (ball.live) {
       const prevY = ball.y;
@@ -477,9 +488,15 @@
           SND.hitP();
         }
       }
-      // cpu (top)
-      if (ball.live && ball.vy < 0 && ball.y <= state.cpu.y + RACKET_H && ball.y >= state.cpu.y - 4) {
-        if (Math.abs(ball.x - state.cpu.x) < RACKET_W / 2 + 2) {
+      // cpu (top): swept check too
+      if (ball.live && ball.vy < 0) {
+        const rYmin = Math.min(cpuPrevY, state.cpu.y) - 4;
+        const rYmax = Math.max(cpuPrevY, state.cpu.y) + RACKET_H;
+        const bYmin = Math.min(prevY, ball.y);
+        const bYmax = Math.max(prevY, ball.y);
+        const yHit = !(bYmax < rYmin || bYmin > rYmax);
+        const xHit = Math.abs(ball.x - state.cpu.x) < RACKET_W / 2 + 2;
+        if (yHit && xHit) {
           const miss = Math.random() > (0.55 + eff * 0.45);
           if (!miss) {
             ball.y = state.cpu.y + RACKET_H;
@@ -499,18 +516,6 @@
         (winner === 'p' ? SND.win : SND.loss)();
         awardPoint(winner);
         afterPoint();
-      }
-
-      // --- net fail: ball crosses the net with too little forward speed ---
-      if (ball.live) {
-        const crossedNet = (prevY - court.net) * (ball.y - court.net) <= 0 && prevY !== ball.y;
-        if (crossedNet && Math.abs(ball.vy) < 0.25) {
-          SND.net();
-          ball.vy = 0; ball.vx = 0; ball.live = false;
-          const winner = ball.owner === 'player' ? 'p' : 'c';
-          awardPoint(winner);
-          afterPoint();
-        }
       }
 
       // --- baseline out: went past a racket = that player lost the point ---
@@ -565,8 +570,8 @@
     ctx.stroke();
     ctx.restore();
 
-    drawRacket(state.cpu.x, state.cpu.y);
-    drawRacket(state.player.x, state.player.y);
+    drawRacket(state.cpu.x, state.cpu.y, 'top');
+    drawRacket(state.player.x, state.player.y, 'bottom');
 
     // server indicator: small dot just outside the court beside the server's racket
     {
@@ -613,9 +618,27 @@
     }
   }
 
-  function drawRacket(cx, cy) {
+  function drawRacket(cx, cy, side) {
+    // Oval head + short handle pointing toward own baseline.
+    const headHalfW = 18, headHalfH = 5;
+    ctx.strokeStyle = '#111';
     ctx.fillStyle = '#111';
-    ctx.fillRect(Math.round(cx - RACKET_W / 2), Math.round(cy - RACKET_H / 2), RACKET_W, RACKET_H);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, headHalfW, headHalfH, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // a single string line for character
+    ctx.beginPath();
+    ctx.moveTo(Math.round(cx - headHalfW + 3) + 0.5, Math.round(cy) + 0.5);
+    ctx.lineTo(Math.round(cx + headHalfW - 3) + 0.5, Math.round(cy) + 0.5);
+    ctx.stroke();
+    // handle toward own side
+    const handleLen = 9;
+    const hx = Math.round(cx) - 1;
+    const hy = side === 'bottom'
+      ? Math.round(cy + headHalfH)
+      : Math.round(cy - headHalfH) - handleLen;
+    ctx.fillRect(hx, hy, 2, handleLen);
   }
 
   // init
