@@ -514,18 +514,25 @@
       } else {
         cpuTargetY = cpuHomeY + (cpuMaxFwd - cpuHomeY) * eff * 0.3;
       }
-      // Predict where the ball will be at the target intercept line.
+      // Predict where the ball will cross the target intercept line.
+      // Note: prediction is linear (uses ball.vx); rear-court spin adds
+      // lateral acceleration the CPU does NOT model, so curved balls
+      // naturally fool the prediction.
       if (ball.vy < 0) {
         const t = (cpuTargetY - ball.y) / ball.vy;
         cpuTargetX = ball.x + ball.vx * t;
-        cpuTargetX += (Math.random() - 0.5) * (1 - eff) * 160;
       }
     }
     const cpuPrevX = state.cpu.x;
     const cpuPrevY = state.cpu.y;
-    const cpuLerp = 0.03 + eff * 0.18;
-    state.cpu.x += (cpuTargetX - state.cpu.x) * Math.min(1, cpuLerp * dt);
-    state.cpu.y += (cpuTargetY - state.cpu.y) * Math.min(1, cpuLerp * 0.7 * dt);
+    // CPU has a real movement budget per frame; if the ball moves laterally
+    // faster than this, the CPU can't get there. No tracking lerp, no RNG.
+    const CPU_MAX_VX = 2.0 + eff * 2.5;   // 2.0 → 4.5 px/frame at 60fps
+    const CPU_MAX_VY = 1.2 + eff * 1.6;   // 1.2 → 2.8
+    const dxNeeded = cpuTargetX - state.cpu.x;
+    const dyNeeded = cpuTargetY - state.cpu.y;
+    state.cpu.x += clamp(dxNeeded, -CPU_MAX_VX * dt, CPU_MAX_VX * dt);
+    state.cpu.y += clamp(dyNeeded, -CPU_MAX_VY * dt, CPU_MAX_VY * dt);
     state.cpu.x = clamp(state.cpu.x, rxMin, rxMax);
     state.cpu.y = clamp(state.cpu.y, cpuYMin, cpuYMax);
     state.cpu.vx = (state.cpu.x - cpuPrevX) / Math.max(dt, 0.001);
@@ -586,7 +593,7 @@
           SND.hitP();
         }
       }
-      // cpu (top): swept check too
+      // cpu (top): swept check too. No miss roll — if the racket's there, it hits.
       if (ball.live && ball.vy < 0) {
         const rYmin = Math.min(cpuPrevY, state.cpu.y) - 4;
         const rYmax = Math.max(cpuPrevY, state.cpu.y) + RACKET_H;
@@ -595,17 +602,14 @@
         const yHit = !(bYmax < rYmin || bYmin > rYmax);
         const xHit = Math.abs(ball.x - state.cpu.x) < RACKET_W / 2 + 2;
         if (yHit && xHit) {
-          const miss = Math.random() > (0.45 + eff * 0.4);
-          if (!miss) {
-            ball.y = state.cpu.y + RACKET_H;
-            ball.vy = Math.max(0.7, Math.abs(ball.vy)) + 0.1 + eff * 0.3;
-            const aim = (state.player.x > (court.x + court.w / 2) ? -1 : 1) * eff * 1.0;
-            ball.vx = clamp(aim + state.cpu.vx * 0.35 + (Math.random() - 0.5) * (1 - eff) * 0.8, -2.6, 2.6);
-            ball.owner = 'player';
-            ball.trailT = 28;
-            ball.spin = 0;
-            SND.hitC();
-          }
+          ball.y = state.cpu.y + RACKET_H;
+          ball.vy = Math.max(0.7, Math.abs(ball.vy)) + 0.1 + eff * 0.3;
+          const aim = (state.player.x > (court.x + court.w / 2) ? -1 : 1) * eff * 1.0;
+          ball.vx = clamp(aim + state.cpu.vx * 0.35 + (Math.random() - 0.5) * (1 - eff) * 0.8, -2.6, 2.6);
+          ball.owner = 'player';
+          ball.trailT = 28;
+          ball.spin = 0;
+          SND.hitC();
         }
       }
 
