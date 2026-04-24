@@ -144,13 +144,21 @@
     o.stop(t + dur + 0.02);
   }
   const SND = {
-    hitP: () => blip(880, 0.04, 0.05),
-    hitC: () => blip(660, 0.04, 0.05),
-    win:  () => { blip(900, 0.08, 0.06); setTimeout(() => blip(1300, 0.1, 0.05), 80); },
-    loss: () => blip(220, 0.18, 0.04, 'triangle'),
-    net:  () => blip(180, 0.1, 0.04, 'triangle'),
-    game: () => { blip(1200, 0.06, 0.06); setTimeout(() => blip(1600, 0.1, 0.06), 90); },
-    set:  () => { blip(900, 0.1, 0.06); setTimeout(() => blip(1300, 0.1, 0.06), 120); setTimeout(() => blip(1700, 0.14, 0.06), 260); },
+    hitP:   () => blip(880, 0.04, 0.05),
+    hitC:   () => blip(660, 0.04, 0.05),
+    serve:  () => { blip(520, 0.04, 0.04); setTimeout(() => blip(1040, 0.05, 0.05), 40); },
+    whoosh: () => blip(300, 0.08, 0.02, 'triangle'),
+    win:    () => { blip(900, 0.08, 0.06); setTimeout(() => blip(1300, 0.1, 0.05), 80); },
+    loss:   () => blip(220, 0.18, 0.04, 'triangle'),
+    net:    () => blip(180, 0.1, 0.04, 'triangle'),
+    game:   () => { blip(1200, 0.06, 0.06); setTimeout(() => blip(1600, 0.1, 0.06), 90); },
+    set:    () => { blip(900, 0.1, 0.06); setTimeout(() => blip(1300, 0.1, 0.06), 120); setTimeout(() => blip(1700, 0.14, 0.06), 260); },
+    match:  () => {
+      [0, 140, 260, 420, 640].forEach((d, i) => {
+        const freqs = [660, 880, 1100, 1320, 1760];
+        setTimeout(() => blip(freqs[i], 0.16, 0.07), d);
+      });
+    },
   };
 
   // Fit canvas to its CSS box for a crisp portrait pixel surface.
@@ -237,7 +245,7 @@
     if (s >= SETS_TO_WIN) {
       score.matchOver = winner === 'p' ? 'player' : 'cpu';
       score.message = winner === 'p' ? 'match: you' : 'match: cpu';
-      SND.set();
+      SND.match();
     } else {
       score.message = winner === 'p' ? 'set: you' : 'set: cpu';
       SND.set();
@@ -311,7 +319,7 @@
     player: { x: 220, y: 700, vx: 0, vy: 0 },
     cpu:    { x: 220, y: 80,  vx: 0, vy: 0 },
     ball:   { x: 220, y: 690, vx: 0, vy: 0, live: false, owner: 'player', prevY: 0 },
-    pointer: { x: 220, y: 700, vx: 0, vy: 0, vxPeak: 0, vyPeak: 0, lastT: 0, active: false },
+    pointer: { x: 220, y: 700, vx: 0, vy: 0, vxPeak: 0, vyPeak: 0, lastT: 0, active: false, lastWhoosh: 0 },
     tPrev:  performance.now(),
     efficiency: parseFloat(diffEl.value),
     autoServeT: null,
@@ -354,6 +362,7 @@
     state.ball.live = true;
     state.ball.prevY = state.ball.y;
     score.message = '';
+    SND.serve();
   }
   serveBtn.addEventListener('click', () => {
     ensureAudio();
@@ -389,6 +398,11 @@
     // captures the thumb even if the finger is already slowing at contact.
     if (Math.abs(state.pointer.vx) > Math.abs(state.pointer.vxPeak)) state.pointer.vxPeak = state.pointer.vx;
     if (Math.abs(state.pointer.vy) > Math.abs(state.pointer.vyPeak)) state.pointer.vyPeak = state.pointer.vy;
+    const speed = Math.hypot(state.pointer.vx, state.pointer.vy);
+    if (speed > 3.5 && now - state.pointer.lastWhoosh > 220) {
+      state.pointer.lastWhoosh = now;
+      SND.whoosh();
+    }
     state.pointer.x = p.x;
     state.pointer.y = p.y;
     state.pointer.lastT = now;
