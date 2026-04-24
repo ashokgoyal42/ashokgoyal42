@@ -624,10 +624,11 @@
     ctx.clearRect(0, 0, W, H);
 
     ctx.strokeStyle = '#111';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(court.x + 0.5, court.y + 0.5, court.w, court.h);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(court.x, court.y, court.w, court.h);
 
-    // service boxes
+    // service boxes (kept as 1px hairlines)
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(court.x + 0.5, court.y + court.h * 0.28 + 0.5);
     ctx.lineTo(court.x + court.w + 0.5, court.y + court.h * 0.28 + 0.5);
