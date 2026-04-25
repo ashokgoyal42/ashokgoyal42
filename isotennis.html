@@ -2,451 +2,603 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>IsoTennis</title>
 <style>
   html, body {
     margin: 0;
     padding: 0;
     height: 100%;
-    background: #1a1a2a;
+    background: #2a2a2a;
     overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: "Courier New", monospace;
-    color: #eee;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #111;
   }
+  body { display: flex; align-items: center; justify-content: center; }
   #wrap {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    padding: 8px;
+    align-items: stretch;
+    gap: 6px;
+    width: 100%;
+    max-width: 440px;
+    height: 100dvh;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    user-select: none;
   }
   canvas {
     display: block;
-    background: #0a0a18;
+    background: #ffffff;
+    touch-action: none;
+    cursor: none;
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
-    touch-action: none;
-    width: min(96vw, 720px);
-    height: auto;
   }
-  #hud {
+  #bar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
     font-size: 12px;
-    color: #aaa;
-    letter-spacing: 1px;
-    text-align: center;
-    user-select: none;
+    color: #111;
+    width: 100%;
+    justify-content: space-between;
+    background: #fff;
+    padding: 6px 10px;
+    box-sizing: border-box;
+    border-radius: 4px;
   }
-  a {
-    color: #6cf;
-    text-decoration: none;
-    font-size: 12px;
+  #bar .group { display: flex; gap: 8px; align-items: center; }
+  button {
+    font: inherit;
+    padding: 4px 10px;
+    border: 1px solid #111;
+    background: #fff;
+    cursor: pointer;
+    color: #111;
   }
+  #scoreline {
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+  }
+  a.back { color: #fff; font-size: 11px; text-align: center; text-decoration: none; }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <canvas id="game" width="240" height="240"></canvas>
-  <div id="hud">ARROWS / WASD to move &middot; auto-swing on contact</div>
-  <a href="index.html">&larr; back</a>
+  <div id="bar">
+    <div class="group"><span id="scoreline">0 &middot; 0</span></div>
+    <div class="group"><button id="serve">serve</button></div>
+  </div>
+  <canvas id="c" width="440" height="660"></canvas>
+  <a class="back" href="index.html">&larr; back</a>
 </div>
 <script>
 (() => {
-  const cv = document.getElementById('game');
-  const ctx = cv.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('scoreline');
+  const serveBtn = document.getElementById('serve');
 
-  const CW = 60;
-  const CH = 90;
-  const NET_H = 8;
+  // Iso projection. World units: x: -CW..CW (width), y: -CH..CH (depth), z: height.
+  // Screen: sx = ORIGX + (x - y), sy = ORIGY + (x + y) * 0.5 - z
+  let W = canvas.width, H = canvas.height;
+  const CW = 60, CH = 100, NET_H = 9;
+  let ORIGX = 0, ORIGY = 0, SCALE = 1;
 
-  const ORIG_X = 120;
-  const ORIG_Y = 130;
   function iso(x, y, z = 0) {
     return {
-      x: ORIG_X + (x - y) * 1,
-      y: ORIG_Y + (x + y) * 0.5 - z
+      x: ORIGX + (x - y) * SCALE,
+      y: ORIGY + (x + y) * 0.5 * SCALE - z * SCALE
     };
   }
+  // Inverse iso at z=0, for pointer mapping.
+  function unproject(px, py) {
+    const a = (px - ORIGX) / SCALE;
+    const b = (py - ORIGY) * 2 / SCALE;
+    return { x: (a + b) / 2, y: (b - a) / 2 };
+  }
 
-  const C = {
-    courtA:  '#2a6b3a',
-    courtB:  '#236032',
-    line:    '#e8e8d8',
-    netPost: '#222',
-    net:     '#cfcfcf',
-    shadow:  'rgba(0,0,0,0.35)',
-    p1:      '#ff5252',
-    p1d:     '#9a1f1f',
-    p2:      '#3aa0ff',
-    p2d:     '#1a4f8f',
-    skin:    '#f1c27d',
-    ball:    '#e8ff4a',
-    balld:   '#9aaf18',
-    sky:     '#1a2438',
-  };
+  function fitCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.min(480, Math.max(320, Math.round(rect.width)));
+    const h = Math.min(900, Math.max(480, Math.round(rect.height)));
+    canvas.width = w; canvas.height = h;
+    W = w; H = h;
+    // Pick scale so the court fits the canvas with a margin.
+    const sx = (W - 40) / (2 * CW + 2 * CH);            // horizontal extent = (CW - (-CW)) but iso x-y -> (CW)-(-CH) = CW+CH
+    const sy = (H - 80) / ((CW + CH));                  // vertical extent = (CW + CH) at most (top corner y=-CH, bottom corner y=CH)
+    SCALE = Math.min(sx, sy);
+    ORIGX = W / 2;
+    // Vertical centring: court vertical extent goes from iso(-CW,-CH).y to iso(CW,CH).y
+    const top = (-CW + -CH) * 0.5 * SCALE;
+    const bot = (CW + CH) * 0.5 * SCALE;
+    ORIGY = (H - (bot - top)) / 2 - top + 8;
+  }
 
+  // --- State ---
+  const RACKET_RX = 9;       // half racket width  (world units)
+  const RACKET_RY = 4;       // half racket depth
+  const RACKET_Z  = 6;       // racket head sits at this height
   const ball = {
-    x: 0, y: -40, z: 20,
-    vx: 0, vy: 1.0, vz: 0,
-    owner: 1,
+    x: 0, y: CH - 30, z: RACKET_Z,
+    vx: 0, vy: 0, vz: 0,
+    live: false,
+    owner: 'player',
+    bounced: false,
+  };
+  const player = { x: 0, y: CH - 20, vx: 0, vy: 0 };
+  const cpu    = { x: 0, y: -CH + 20, vx: 0, vy: 0 };
+  const pointer = { active: false, x: 0, y: 0, lastT: 0, vx: 0, vy: 0, vxPeak: 0, vyPeak: 0 };
+
+  const score = {
+    p: 0, c: 0,
+    server: 'player',
+    matchOver: null,
+    message: 'tap to serve',
   };
 
-  const player = { x: 0, y: CH - 16, vx: 0, vy: 0, swingT: 0 };
-  const ai     = { x: 0, y: -CH + 16, swingT: 0 };
-
-  const score = { p: 0, a: 0 };
-  let state = 'serve';
-  let serveBy = 1;
-  let pointMsg = '';
-  let pointMsgT = 0;
-
-  const keys = {};
-  addEventListener('keydown', e => {
-    keys[e.key.toLowerCase()] = true;
-    if (state === 'serve' && (e.key === ' ' || e.key === 'Enter')) startRally();
-    if ([' ','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault();
-  });
-  addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
-
-  let touchActive = false;
-  function canvasToWorld(cx, cy) {
-    const r = cv.getBoundingClientRect();
-    const px = (cx - r.left) * (cv.width / r.width);
-    const py = (cy - r.top) * (cv.height / r.height);
-    const a = px - ORIG_X;
-    const b = (py - ORIG_Y) * 2;
-    const x = (a + b) / 2;
-    const y = (b - a) / 2;
-    return { x, y };
+  function pointLabel(mine, theirs) {
+    const L = ['0', '15', '30', '40'];
+    if (mine >= 3 && theirs >= 3) {
+      if (mine === theirs) return '40';
+      if (mine === theirs + 1) return 'Ad';
+      return '40';
+    }
+    return L[Math.min(mine, 3)];
   }
-  cv.addEventListener('pointerdown', e => {
-    touchActive = true;
-    if (state === 'serve') startRally();
-    movePlayerTo(canvasToWorld(e.clientX, e.clientY));
-  });
-  cv.addEventListener('pointermove', e => {
-    if (!touchActive) return;
-    movePlayerTo(canvasToWorld(e.clientX, e.clientY));
-  });
-  addEventListener('pointerup', () => { touchActive = false; });
-
-  function movePlayerTo(p) {
-    player.tx = Math.max(-CW + 6, Math.min(CW - 6, p.x));
-    player.ty = Math.max(4, Math.min(CH - 4, p.y));
+  function updateScore() {
+    if (score.matchOver) {
+      scoreEl.textContent = score.matchOver === 'player' ? 'game: you' : 'game: cpu';
+    } else if (score.p >= 3 && score.c >= 3 && score.p === score.c) {
+      scoreEl.textContent = 'deuce';
+    } else if (score.p >= 3 && score.c >= 3 && Math.abs(score.p - score.c) === 1) {
+      scoreEl.textContent = score.p > score.c ? 'ad in' : 'ad out';
+    } else {
+      scoreEl.textContent = `${pointLabel(score.p, score.c)} · ${pointLabel(score.c, score.p)}`;
+    }
+    serveBtn.textContent = score.matchOver ? 'new game' : 'serve';
+  }
+  function awardPoint(who, msg) {
+    if (score.matchOver) return;
+    if (who === 'p') score.p += 1; else score.c += 1;
+    const a = who === 'p' ? score.p : score.c;
+    const b = who === 'p' ? score.c : score.p;
+    if (a >= 4 && a - b >= 2) {
+      score.matchOver = who === 'p' ? 'player' : 'cpu';
+      score.message = score.matchOver === 'player' ? 'game: you' : 'game: cpu';
+    } else {
+      score.message = msg || (who === 'p' ? 'point: you' : 'point: cpu');
+      score.server = who === 'p' ? 'cpu' : 'player';
+    }
+    updateScore();
+  }
+  function newMatch() {
+    score.p = 0; score.c = 0;
+    score.server = 'player';
+    score.matchOver = null;
+    score.message = 'new game';
+    updateScore();
+    resetServe();
   }
 
-  function startRally() {
-    state = 'rally';
-    if (serveBy === 1) {
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+  function resetServe() {
+    ball.live = false;
+    ball.vx = ball.vy = ball.vz = 0;
+    ball.bounced = false;
+    if (score.server === 'player') {
+      ball.owner = 'player';
       ball.x = player.x;
       ball.y = player.y - 4;
-      ball.z = 22;
-      ball.vx = (ai.x - player.x) * 0.012;
-      ball.vy = -1.4;
-      ball.vz = 0.55;
-      ball.owner = 1;
+      ball.z = RACKET_Z;
     } else {
-      ball.x = ai.x;
-      ball.y = ai.y + 4;
-      ball.z = 22;
-      ball.vx = (player.x - ai.x) * 0.012;
-      ball.vy = 1.4;
-      ball.vz = 0.55;
-      ball.owner = 2;
+      ball.owner = 'cpu';
+      ball.x = cpu.x;
+      ball.y = cpu.y + 4;
+      ball.z = RACKET_Z;
     }
+  }
+  function serve() {
+    if (ball.live || score.matchOver) return;
+    if (score.server === 'player') {
+      // flick-driven, slow-mo. Convert pointer flick (screen px) into iso world dir.
+      const wf = unprojectVec(pointer.vxPeak, pointer.vyPeak);
+      const speed = Math.hypot(wf.x, wf.y);
+      // base shot toward opposite baseline
+      let tx = -wf.x * 0.05;
+      let ty = -CH + 20;
+      const dist = Math.hypot(tx - ball.x, ty - ball.y);
+      const v = 0.55 + Math.min(0.5, speed * 0.02);   // slow base + flick boost
+      ball.vx = (tx - ball.x) / dist * v;
+      ball.vy = (ty - ball.y) / dist * v;
+      ball.vz = 0.32;
+      ball.owner = 'player';
+      pointer.vxPeak *= 0.2; pointer.vyPeak *= 0.2;
+    } else {
+      const tx = (Math.random() - 0.5) * (CW * 0.6);
+      const ty = CH - 20;
+      const dist = Math.hypot(tx - ball.x, ty - ball.y);
+      ball.vx = (tx - ball.x) / dist * 0.55;
+      ball.vy = (ty - ball.y) / dist * 0.55;
+      ball.vz = 0.32;
+      ball.owner = 'cpu';
+    }
+    ball.live = true;
     ball.bounced = false;
+    score.message = '';
+  }
+  serveBtn.addEventListener('click', () => {
+    if (score.matchOver) { newMatch(); return; }
+    serve();
+  });
+
+  // Convert a screen-space velocity into a world-space velocity at z=0.
+  // Inverse of: (sx,sy) = (x - y, (x + y) * 0.5).
+  function unprojectVec(vsx, vsy) {
+    const a = vsx / SCALE;
+    const b = vsy * 2 / SCALE;
+    return { x: (a + b) / 2, y: (b - a) / 2 };
   }
 
-  function awardPoint(who, msg) {
-    if (state === 'point') return;
-    state = 'point';
-    pointMsg = msg;
-    pointMsgT = 60;
-    if (who === 'p') score.p++; else score.a++;
-    serveBy = (who === 'p') ? 1 : 2;
-    setTimeout(() => {
-      state = 'serve';
-      ball.vx = ball.vy = ball.vz = 0;
-      if (serveBy === 1) { ball.x = player.x; ball.y = player.y - 4; ball.z = 16; }
-      else               { ball.x = ai.x;     ball.y = ai.y + 4;     ball.z = 16; }
-    }, 1100);
+  // --- Pointer ---
+  function canvasCoords(e) {
+    const r = canvas.getBoundingClientRect();
+    const sx = canvas.width / r.width;
+    const sy = canvas.height / r.height;
+    return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
   }
+  canvas.addEventListener('pointerdown', e => {
+    const p = canvasCoords(e);
+    pointer.x = p.x; pointer.y = p.y;
+    pointer.lastT = performance.now();
+    pointer.vx = pointer.vy = 0;
+    pointer.active = true;
+    if (score.matchOver) { newMatch(); return; }
+    if (!ball.live && score.server === 'player') serve();
+  });
+  canvas.addEventListener('pointermove', e => {
+    e.preventDefault();
+    const p = canvasCoords(e);
+    const now = performance.now();
+    const dt = Math.max(1, now - pointer.lastT);
+    pointer.vx = (p.x - pointer.x) / dt * 22;
+    pointer.vy = (p.y - pointer.y) / dt * 22;
+    if (Math.abs(pointer.vx) > Math.abs(pointer.vxPeak)) pointer.vxPeak = pointer.vx;
+    if (Math.abs(pointer.vy) > Math.abs(pointer.vyPeak)) pointer.vyPeak = pointer.vy;
+    pointer.x = p.x; pointer.y = p.y; pointer.lastT = now;
+    pointer.active = true;
+    // Map pointer to player target in world space (only on player's half).
+    const w = unproject(p.x, p.y);
+    player.tx = clamp(w.x, -CW + 4, CW - 4);
+    player.ty = clamp(w.y, 4, CH - 4);
+  });
+  function endPointer() {
+    pointer.active = false;
+    pointer.vx *= 0.5; pointer.vy *= 0.5;
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('pointerleave', endPointer);
 
-  function updatePlayer() {
-    const sp = 1.4;
-    let dx = 0, dy = 0;
-    if (keys['arrowleft']  || keys['a']) dx -= 1;
-    if (keys['arrowright'] || keys['d']) dx += 1;
-    if (keys['arrowup']    || keys['w']) dy -= 1;
-    if (keys['arrowdown']  || keys['s']) dy += 1;
-    if (dx || dy) {
-      const m = Math.hypot(dx, dy);
-      player.x += (dx / m) * sp;
-      player.y += (dy / m) * sp;
-    } else if (player.tx != null) {
-      const ddx = player.tx - player.x, ddy = player.ty - player.y;
-      const d = Math.hypot(ddx, ddy);
-      if (d > 0.5) {
-        player.x += (ddx / d) * Math.min(sp, d);
-        player.y += (ddy / d) * Math.min(sp, d);
-      }
+  // --- Update ---
+  let tPrev = performance.now();
+  // Slow-mo: physics tick scaled to about half normal speed.
+  const TIME_SCALE = 0.5;
+  const GRAV = 0.013;          // world units / frame^2 (very gentle)
+
+  function updatePlayer(dt) {
+    const sp = 0.9;
+    const tx = player.tx != null ? player.tx : player.x;
+    const ty = player.ty != null ? player.ty : player.y;
+    const dx = tx - player.x, dy = ty - player.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 0.01) {
+      const step = Math.min(sp * dt, d);
+      player.vx = (dx / d) * step / Math.max(dt, 0.001);
+      player.vy = (dy / d) * step / Math.max(dt, 0.001);
+      player.x += (dx / d) * step;
+      player.y += (dy / d) * step;
+    } else {
+      player.vx = player.vy = 0;
     }
-    player.x = Math.max(-CW + 4, Math.min(CW - 4, player.x));
-    player.y = Math.max(6, Math.min(CH - 4, player.y));
-    if (player.swingT > 0) player.swingT--;
+    player.x = clamp(player.x, -CW + 4, CW - 4);
+    player.y = clamp(player.y, 4, CH - 4);
   }
-
-  function updateAI() {
-    let target = ai.x;
-    if (ball.vy < 0 && ball.y < 0) {
-      const t = (ai.y - ball.y) / ball.vy;
-      target = ball.x + ball.vx * t;
+  function updateCPU(dt) {
+    let tx = cpu.x;
+    if (ball.live && ball.vy < 0) {
+      const t = (cpu.y - ball.y) / ball.vy;
+      if (t > 0) tx = ball.x + ball.vx * t;
     }
-    target = Math.max(-CW + 4, Math.min(CW - 4, target));
-    const d = target - ai.x;
-    const sp = 1.05;
-    if (Math.abs(d) > 0.5) ai.x += Math.sign(d) * Math.min(sp, Math.abs(d));
-    if (ai.swingT > 0) ai.swingT--;
+    tx = clamp(tx, -CW + 4, CW - 4);
+    const sp = 0.7;
+    const dx = tx - cpu.x;
+    const step = clamp(dx, -sp * dt, sp * dt);
+    cpu.vx = step / Math.max(dt, 0.001);
+    cpu.x += step;
   }
 
-  function tryHit(who) {
-    const p = (who === 'p') ? player : ai;
-    if (ball.z > 22 || ball.z < 0.5) return false;
-    const dx = ball.x - p.x;
-    const dy = ball.y - p.y;
-    if (Math.hypot(dx, dy) > 9) return false;
-    if (who === 'p' && ball.y < 0) return false;
-    if (who === 'a' && ball.y > 0) return false;
-    if (who === 'p') {
-      const aimX = Math.max(-CW + 8, Math.min(CW - 8, p.x * 0.4 + (Math.random() - 0.5) * 20));
+  function tryHit(side, prevPos) {
+    // Hit if ball is near racket (in x,y) and at racket height (in z).
+    const r = (side === 'p') ? player : cpu;
+    if (Math.abs(ball.z - RACKET_Z) > 6) return false;
+    if (Math.abs(ball.x - r.x) > RACKET_RX) return false;
+    // Swept y check using prev position.
+    const yMin = Math.min(prevPos.y, ball.y);
+    const yMax = Math.max(prevPos.y, ball.y);
+    const rMin = r.y - RACKET_RY;
+    const rMax = r.y + RACKET_RY;
+    if (yMax < rMin || yMin > rMax) return false;
+    // Side check
+    if (side === 'p' && ball.y < 0) return false;
+    if (side === 'c' && ball.y > 0) return false;
+    if (side === 'p') {
+      // Player hits back — flick adds power and aim.
+      const wf = unprojectVec(pointer.vxPeak, pointer.vyPeak);
+      const aimX = clamp(r.x * 0.3 + wf.x * 0.05 + (Math.random() - 0.5) * 4, -CW + 8, CW - 8);
       const tx = aimX, ty = -CH + 20;
       const dist = Math.hypot(tx - ball.x, ty - ball.y);
-      const speed = 2.0;
+      const speed = clamp(0.7 + Math.min(0.7, Math.hypot(wf.x, wf.y) * 0.04), 0.7, 1.2);
       ball.vx = (tx - ball.x) / dist * speed;
       ball.vy = (ty - ball.y) / dist * speed;
-      ball.vz = 0.85;
-      ball.owner = 1;
-      player.swingT = 10;
+      ball.vz = 0.42;
+      ball.owner = 'player';
+      pointer.vxPeak *= 0.25; pointer.vyPeak *= 0.25;
     } else {
-      const aimX = Math.max(-CW + 8, Math.min(CW - 8, player.x + (Math.random() - 0.5) * 30));
-      const ty = CH - 20, tx = aimX;
+      const aimX = clamp(player.x + (Math.random() - 0.5) * 18, -CW + 8, CW - 8);
+      const tx = aimX, ty = CH - 20;
       const dist = Math.hypot(tx - ball.x, ty - ball.y);
-      const speed = 1.9;
+      const speed = 0.78;
       ball.vx = (tx - ball.x) / dist * speed;
       ball.vy = (ty - ball.y) / dist * speed;
-      ball.vz = 0.8;
-      ball.owner = 2;
-      ai.swingT = 10;
+      ball.vz = 0.4;
+      ball.owner = 'cpu';
     }
     ball.bounced = false;
     return true;
   }
 
-  function updateBall() {
-    if (state !== 'rally') return;
-    ball.x += ball.vx;
-    ball.y += ball.vy;
-    ball.z += ball.vz;
-    ball.vz -= 0.045;
+  function step(now) {
+    let dtMs = Math.min(50, now - tPrev);
+    tPrev = now;
+    const dt = (dtMs / 16.67) * TIME_SCALE;
 
-    if ((ball.y - ball.vy) * ball.y < 0) {
-      if (ball.z < NET_H) {
-        const who = (ball.owner === 1) ? 'a' : 'p';
-        awardPoint(who, (who === 'p' ? 'NET! Point you' : 'NET! Point AI'));
-        return;
-      }
-    }
+    // Pointer flick decay
+    const decay = Math.pow(0.94, dt);
+    pointer.vxPeak *= decay;
+    pointer.vyPeak *= decay;
 
-    if (ball.z <= 0 && ball.vz < 0) {
-      ball.z = 0;
-      if (Math.abs(ball.x) > CW || Math.abs(ball.y) > CH) {
-        const who = (ball.owner === 1) ? 'p' : 'a';
-        awardPoint(who, who === 'p' ? 'OUT! Point you' : 'OUT! Point AI');
-        return;
-      }
-      if (!ball.bounced) {
-        if (ball.owner === 1 && ball.y > 0) {
-          awardPoint('a', 'Wrong side! AI scores');
-          return;
+    updatePlayer(dt);
+    updateCPU(dt);
+
+    if (ball.live) {
+      const prev = { x: ball.x, y: ball.y, z: ball.z };
+
+      // Net plane crossing: y=0
+      const willCross = (prev.y > 0 && (ball.y + ball.vy * dt) < 0) ||
+                        (prev.y < 0 && (ball.y + ball.vy * dt) > 0);
+
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+      ball.z += ball.vz * dt;
+      ball.vz -= GRAV * dt;
+
+      if (willCross) {
+        // Estimate z when y crosses 0
+        const f = Math.abs(prev.y) / (Math.abs(prev.y) + Math.abs(ball.y) + 1e-9);
+        const zAtNet = prev.z + (ball.z - prev.z) * f;
+        if (zAtNet < NET_H) {
+          // Net out
+          const who = (ball.owner === 'player') ? 'c' : 'p';
+          awardPoint(who, who === 'p' ? 'net: you score' : 'net: cpu scores');
+          ball.live = false;
+          afterPoint();
+          requestAnimationFrame(step); return;
         }
-        if (ball.owner === 2 && ball.y < 0) {
-          awardPoint('p', 'Wrong side! You score');
-          return;
-        }
-        ball.bounced = true;
-        ball.vz = 0.65;
-        ball.vx *= 0.9;
-        ball.vy *= 0.9;
-      } else {
-        const who = (ball.owner === 1) ? 'p' : 'a';
-        awardPoint(who, who === 'p' ? 'Point you!' : 'Point AI!');
-        return;
       }
+
+      // Bounce
+      if (ball.z <= 0 && ball.vz < 0) {
+        ball.z = 0;
+        // Out of bounds?
+        if (Math.abs(ball.x) > CW || Math.abs(ball.y) > CH) {
+          const who = (ball.owner === 'player') ? 'p' : 'c';
+          awardPoint(who, who === 'p' ? 'out: you score' : 'out: cpu scores');
+          ball.live = false;
+          afterPoint();
+          requestAnimationFrame(step); return;
+        }
+        if (!ball.bounced) {
+          // Must bounce on opposite side from owner.
+          if (ball.owner === 'player' && ball.y > 0) {
+            awardPoint('c', 'wrong side: cpu scores');
+            ball.live = false; afterPoint();
+            requestAnimationFrame(step); return;
+          }
+          if (ball.owner === 'cpu' && ball.y < 0) {
+            awardPoint('p', 'wrong side: you score');
+            ball.live = false; afterPoint();
+            requestAnimationFrame(step); return;
+          }
+          ball.bounced = true;
+          ball.vz = 0.30;
+          ball.vx *= 0.92;
+          ball.vy *= 0.92;
+        } else {
+          // Second bounce on receiver's side: receiver missed.
+          const who = (ball.owner === 'player') ? 'p' : 'c';
+          awardPoint(who, who === 'p' ? 'point: you' : 'point: cpu');
+          ball.live = false; afterPoint();
+          requestAnimationFrame(step); return;
+        }
+      }
+
+      // After bounce, attempt hit on the receiving side.
+      if (ball.bounced) {
+        if (ball.y > 0) tryHit('p', prev);
+        else            tryHit('c', prev);
+      }
+    } else {
+      // Park ball at server's racket
+      if (score.server === 'player') { ball.x = player.x; ball.y = player.y - 4; ball.z = RACKET_Z; }
+      else                            { ball.x = cpu.x;    ball.y = cpu.y + 4;    ball.z = RACKET_Z; }
     }
 
-    if (ball.bounced) {
-      if (ball.y > 0) tryHit('p');
-      else            tryHit('a');
-    }
+    draw();
+    requestAnimationFrame(step);
   }
 
-  function px(x, y, w = 1, h = 1, color) {
-    ctx.fillStyle = color;
-    ctx.fillRect(x | 0, y | 0, w, h);
+  let autoServeT = null;
+  function afterPoint() {
+    clearTimeout(autoServeT);
+    setTimeout(() => {
+      resetServe();
+      if (!score.matchOver && score.server === 'cpu') {
+        autoServeT = setTimeout(() => { if (!ball.live && !score.matchOver) serve(); }, 900);
+      }
+    }, 600);
+  }
+
+  // --- Drawing (B&W) ---
+  function strokeLine(a, b) {
+    ctx.beginPath();
+    ctx.moveTo(a.x + 0.5, a.y + 0.5);
+    ctx.lineTo(b.x + 0.5, b.y + 0.5);
+    ctx.stroke();
+  }
+  function strokePoly(pts) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x + 0.5, pts[0].y + 0.5);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x + 0.5, pts[i].y + 0.5);
+    ctx.closePath();
+    ctx.stroke();
   }
 
   function drawCourt() {
-    ctx.fillStyle = C.sky;
-    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, W, H);
 
-    const corners = [
-      iso(-CW, -CH), iso( CW, -CH), iso( CW, CH), iso(-CW, CH)
-    ];
-    ctx.fillStyle = C.courtA;
-    ctx.beginPath();
-    ctx.moveTo(corners[0].x, corners[0].y);
-    ctx.lineTo(corners[1].x, corners[1].y);
-    let m1 = iso(CW, 0), m2 = iso(-CW, 0);
-    ctx.lineTo(m1.x, m1.y);
-    ctx.lineTo(m2.x, m2.y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = C.courtB;
-    ctx.beginPath();
-    ctx.moveTo(m2.x, m2.y);
-    ctx.lineTo(m1.x, m1.y);
-    ctx.lineTo(corners[2].x, corners[2].y);
-    ctx.lineTo(corners[3].x, corners[3].y);
-    ctx.closePath();
-    ctx.fill();
+    ctx.strokeStyle = '#111';
 
-    ctx.strokeStyle = C.line;
+    // Court perimeter
+    ctx.lineWidth = 2;
+    strokePoly([iso(-CW, -CH), iso(CW, -CH), iso(CW, CH), iso(-CW, CH)]);
+
+    // Service-box hairlines
     ctx.lineWidth = 1;
-    function lineW(ax, ay, bx, by) {
-      const a = iso(ax, ay), b = iso(bx, by);
-      ctx.beginPath();
-      ctx.moveTo(a.x + 0.5, a.y + 0.5);
-      ctx.lineTo(b.x + 0.5, b.y + 0.5);
-      ctx.stroke();
-    }
-    lineW(-CW, -CH,  CW, -CH);
-    lineW( CW, -CH,  CW,  CH);
-    lineW( CW,  CH, -CW,  CH);
-    lineW(-CW,  CH, -CW, -CH);
-    lineW(-CW, -CH/2,  CW, -CH/2);
-    lineW(-CW,  CH/2,  CW,  CH/2);
-    lineW(0, -CH/2, 0, CH/2);
+    strokeLine(iso(-CW, -CH * 0.5), iso(CW, -CH * 0.5));
+    strokeLine(iso(-CW,  CH * 0.5), iso(CW,  CH * 0.5));
+    strokeLine(iso(0, -CH * 0.5),   iso(0,  CH * 0.5));
 
-    const npL = iso(-CW - 4, 0, 0);
-    const npLt = iso(-CW - 4, 0, NET_H + 2);
-    const npR = iso( CW + 4, 0, 0);
-    const npRt = iso( CW + 4, 0, NET_H + 2);
-    ctx.strokeStyle = C.netPost;
-    ctx.beginPath(); ctx.moveTo(npL.x+0.5, npL.y+0.5); ctx.lineTo(npLt.x+0.5, npLt.y+0.5); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(npR.x+0.5, npR.y+0.5); ctx.lineTo(npRt.x+0.5, npRt.y+0.5); ctx.stroke();
-    const steps = 24;
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const wx = -CW - 4 + (CW * 2 + 8) * t;
-      const top = iso(wx, 0, NET_H);
-      const bot = iso(wx, 0, 0);
-      px(top.x, top.y, 1, (bot.y - top.y) | 0, i % 2 ? C.net : '#9a9a9a');
+    // Net: dashed top band + thin posts + sparse vertical hatch.
+    ctx.save();
+    // posts
+    strokeLine(iso(-CW - 3, 0, 0), iso(-CW - 3, 0, NET_H + 2));
+    strokeLine(iso( CW + 3, 0, 0), iso( CW + 3, 0, NET_H + 2));
+    // dashed top band
+    ctx.setLineDash([4, 4]);
+    strokeLine(iso(-CW - 3, 0, NET_H), iso(CW + 3, 0, NET_H));
+    ctx.setLineDash([]);
+    // light hatch
+    ctx.strokeStyle = '#888';
+    const N = 16;
+    for (let i = 1; i < N; i++) {
+      const wx = -CW + (2 * CW) * (i / N);
+      strokeLine(iso(wx, 0, 0), iso(wx, 0, NET_H));
     }
-    const tL = iso(-CW - 4, 0, NET_H), tR = iso(CW + 4, 0, NET_H);
-    ctx.strokeStyle = '#fff';
-    ctx.beginPath(); ctx.moveTo(tL.x+0.5, tL.y+0.5); ctx.lineTo(tR.x+0.5, tR.y+0.5); ctx.stroke();
+    ctx.restore();
   }
 
-  function drawPlayer(p, body, dark, swinging, facing) {
-    const f = iso(p.x, p.y, 0);
-    const fx = (f.x | 0) - 4;
-    const fy = (f.y | 0) - 12;
-    drawShadow(p.x, p.y, 0, 5);
-    px(fx + 2, fy + 9, 2, 3, dark);
-    px(fx + 4, fy + 9, 2, 3, dark);
-    px(fx + 1, fy + 4, 6, 5, body);
-    px(fx + 2, fy, 4, 4, C.skin);
-    if (swinging) {
-      px(fx + 6, fy + 3, 3, 1, C.skin);
-      px(fx + 8, fy + 1, 1, 5, '#ddd');
-      px(fx + 7, fy, 3, 1, '#ddd');
-      px(fx + 7, fy + 6, 3, 1, '#ddd');
-    } else {
-      px(fx + 6, fy + 5, 1, 3, C.skin);
-      px(fx + 7, fy + 6, 1, 3, '#ddd');
-    }
-  }
-
-  function drawShadow(x, y, z, r) {
+  function drawShadow(x, y, z) {
     const s = iso(x, y, 0);
-    const k = Math.max(0.4, 1 - z * 0.02);
-    ctx.fillStyle = C.shadow;
+    const k = clamp(1 - z * 0.012, 0.4, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
     ctx.beginPath();
-    ctx.ellipse(s.x, s.y + 1, r * k, (r * k) * 0.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(s.x, s.y, 5 * k * SCALE * 0.5, 2.5 * k * SCALE * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  function drawRacket(p) {
+    drawShadow(p.x, p.y, 0);
+    const head = iso(p.x, p.y, RACKET_Z);
+    const grip = iso(p.x, p.y, 0);
+    ctx.strokeStyle = '#111';
+    ctx.fillStyle = '#fff';
+    ctx.lineWidth = 1.2;
+    // Head: oval in iso (not perfectly circular due to projection)
+    ctx.beginPath();
+    ctx.ellipse(head.x, head.y, RACKET_RX * SCALE, RACKET_RY * SCALE, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // single string line
+    ctx.beginPath();
+    ctx.moveTo(head.x - RACKET_RX * SCALE + 2, head.y);
+    ctx.lineTo(head.x + RACKET_RX * SCALE - 2, head.y);
+    ctx.stroke();
+    // handle: from head down to ground
+    ctx.beginPath();
+    ctx.moveTo(head.x + 0.5, head.y + RACKET_RY * SCALE * 0.5);
+    ctx.lineTo(grip.x + 0.5, grip.y + 0.5);
+    ctx.stroke();
   }
 
   function drawBall() {
-    drawShadow(ball.x, ball.y, ball.z, 3);
+    drawShadow(ball.x, ball.y, ball.z);
     const b = iso(ball.x, ball.y, ball.z);
-    px(b.x - 1, b.y - 2, 3, 1, C.balld);
-    px(b.x - 2, b.y - 1, 5, 1, C.ball);
-    px(b.x - 2, b.y,     5, 1, C.ball);
-    px(b.x - 1, b.y + 1, 3, 1, C.balld);
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, Math.max(2.5, 3 * SCALE * 0.5), 0, Math.PI * 2);
+    ctx.fill();
   }
 
   function drawHUD() {
-    ctx.fillStyle = '#fff';
-    ctx.font = '10px "Courier New", monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('YOU ' + score.p, 6, 12);
-    ctx.textAlign = 'right';
-    ctx.fillText(score.a + ' AI', cv.width - 6, 12);
+    ctx.fillStyle = '#111';
+    ctx.font = '11px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center';
+    if (score.message) ctx.fillText(score.message, W / 2, 18);
 
-    if (state === 'serve') {
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#ffe680';
-      ctx.fillText(serveBy === 1 ? 'YOUR SERVE - SPACE' : 'AI SERVE - SPACE', cv.width / 2, 22);
-    }
-    if (pointMsgT > 0) {
-      pointMsgT--;
-      ctx.textAlign = 'center';
+    if (score.matchOver) {
+      const cy = H / 2;
+      ctx.globalAlpha = 0.92;
       ctx.fillStyle = '#fff';
-      ctx.fillText(pointMsg, cv.width / 2, cv.height - 8);
+      ctx.fillRect(W / 2 - 90, cy - 26, 180, 52);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#111';
+      ctx.strokeRect(W / 2 - 89.5, cy - 25.5, 179, 51);
+      ctx.fillStyle = '#111';
+      ctx.font = '14px ui-monospace, Menlo, monospace';
+      ctx.fillText(score.matchOver === 'player' ? 'GAME · YOU' : 'GAME · CPU', W / 2, cy - 4);
+      ctx.font = '11px ui-monospace, Menlo, monospace';
+      ctx.fillText('tap to play again', W / 2, cy + 14);
     }
   }
 
   function draw() {
     drawCourt();
+    // z-sort the three things by world y so far-side renders behind.
     const items = [
-      { y: ai.y,     draw: () => drawPlayer(ai, C.p2, C.p2d, ai.swingT > 0, 1) },
-      { y: ball.y,   draw: () => drawBall() },
-      { y: player.y, draw: () => drawPlayer(player, C.p1, C.p1d, player.swingT > 0, -1) },
+      { y: cpu.y,    f: () => drawRacket(cpu) },
+      { y: ball.y,   f: () => drawBall() },
+      { y: player.y, f: () => drawRacket(player) },
     ];
     items.sort((a, b) => a.y - b.y);
-    items.forEach(it => it.draw());
+    items.forEach(it => it.f());
     drawHUD();
   }
 
-  let serveTimer = 0;
-  function loop() {
-    updatePlayer();
-    updateAI();
-    if (state === 'serve' && serveBy === 2) {
-      serveTimer++;
-      if (serveTimer > 60) { serveTimer = 0; startRally(); }
-    } else {
-      serveTimer = 0;
-    }
-    updateBall();
-    draw();
-    requestAnimationFrame(loop);
-  }
-  loop();
+  // init
+  window.addEventListener('resize', () => { fitCanvas(); resetServe(); });
+  fitCanvas();
+  updateScore();
+  resetServe();
+  requestAnimationFrame(t => { tPrev = t; step(t); });
 })();
 </script>
 </body>
