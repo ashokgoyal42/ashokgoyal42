@@ -9,7 +9,7 @@
     margin: 0;
     padding: 0;
     height: 100%;
-    background: #ffffff;
+    background: #2a2a2a;
     overflow: hidden;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     color: #111;
@@ -42,7 +42,7 @@
     image-rendering: pixelated;
     image-rendering: crisp-edges;
   }
-  #bar, #lvlbar {
+  #bar {
     display: flex;
     gap: 10px;
     align-items: center;
@@ -50,8 +50,12 @@
     color: #111;
     width: 100%;
     justify-content: space-between;
+    background: #fff;
+    padding: 6px 10px;
+    box-sizing: border-box;
+    border-radius: 4px;
   }
-  #bar .group, #lvlbar .group { display: flex; gap: 8px; align-items: center; }
+  #bar .group { display: flex; gap: 8px; align-items: center; }
   button {
     font: inherit;
     padding: 4px 10px;
@@ -63,7 +67,13 @@
   }
   button:hover { background: #f0f0f0; }
   #hint { font-size: 11px; color: #555; letter-spacing: 0.3px; text-align: center; }
-  #scoreline { font-variant-numeric: tabular-nums; }
+  #scoreline {
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    color: #000;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+  }
   #games { color: #555; font-size: 11px; }
 </style>
 </head>
@@ -616,7 +626,11 @@
   }
 
   function draw() {
-    ctx.clearRect(0, 0, W, H);
+    // Fill the area outside the court with dark grey, court itself white.
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(court.x, court.y, court.w, court.h);
 
     ctx.strokeStyle = '#111';
     ctx.lineWidth = 2;
@@ -654,12 +668,14 @@
       ctx.fillRect(Math.round(rx) - 1, Math.round(dotY) - 1, 3, 3);
     }
 
-    // ball
-    const BALL = 6;
-    const bcx = Math.round(state.ball.x);
-    const bcy = Math.round(state.ball.y);
+    // ball — round
+    const BALL_R = 3.5;
+    const bcx = state.ball.x;
+    const bcy = state.ball.y;
     ctx.fillStyle = '#111';
-    ctx.fillRect(bcx - BALL / 2, bcy - BALL / 2, BALL, BALL);
+    ctx.beginPath();
+    ctx.arc(bcx, bcy, BALL_R, 0, Math.PI * 2);
+    ctx.fill();
     // post-hit trajectory: two dots behind the ball along its travel direction
     if (state.ball.live && state.ball.trailT > 0) {
       const sp = Math.hypot(state.ball.vx, state.ball.vy);
@@ -668,9 +684,13 @@
         const uy = -state.ball.vy / sp;
         const fade = clamp(state.ball.trailT / 28, 0, 1);
         ctx.globalAlpha = 0.55 * fade;
-        ctx.fillRect(Math.round(bcx + ux * 7) - 1, Math.round(bcy + uy * 7) - 1, 3, 3);
+        ctx.beginPath();
+        ctx.arc(bcx + ux * 7, bcy + uy * 7, 2.0, 0, Math.PI * 2);
+        ctx.fill();
         ctx.globalAlpha = 0.3 * fade;
-        ctx.fillRect(Math.round(bcx + ux * 14) - 1, Math.round(bcy + uy * 14) - 1, 2, 2);
+        ctx.beginPath();
+        ctx.arc(bcx + ux * 14, bcy + uy * 14, 1.4, 0, Math.PI * 2);
+        ctx.fill();
         ctx.globalAlpha = 1;
       }
     }
