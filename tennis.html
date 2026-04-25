@@ -224,6 +224,15 @@
     }
   }
 
+  function adjustLvlOnGame(who) {
+    // Player wins a game → CPU steps up; CPU wins → CPU eases off slightly.
+    // Up faster than down so the challenge keeps climbing across a match.
+    state.efficiency = clamp(
+      state.efficiency + (who === 'p' ? 0.05 : -0.04),
+      0.3, 0.95
+    );
+  }
+
   function awardPoint(who) {
     if (score.matchOver) return;
 
@@ -240,6 +249,7 @@
       if (a >= 7 && a - b >= 2) {
         winSet(who);
         score.server = (who === 'p') ? 'cpu' : 'player';
+        adjustLvlOnGame(who);
       } else {
         score.message = who === 'p' ? 'point: you' : 'point: cpu';
       }
@@ -251,6 +261,7 @@
         if (who === 'p') score.gamesP += 1; else score.gamesC += 1;
         score.p = 0; score.c = 0;
         score.server = score.server === 'player' ? 'cpu' : 'player';
+        adjustLvlOnGame(who);
 
         const ga = who === 'p' ? score.gamesP : score.gamesC;
         const gb = who === 'p' ? score.gamesC : score.gamesP;
@@ -283,6 +294,7 @@
     score.server = 'player';
     score.matchOver = null;
     score.message = 'new match';
+    state.efficiency = DEFAULT_LVL;
     updateScore();
     resetServe(score.server);
   }
