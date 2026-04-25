@@ -122,9 +122,9 @@
   }
 
   // --- State ---
-  const RACKET_RX = 9;       // half racket width  (world units)
-  const RACKET_RY = 4;       // half racket depth
-  const RACKET_Z  = 6;       // racket head sits at this height
+  const RACKET_RX = 12;      // half racket width  (world units)
+  const RACKET_RY = 7;       // half racket depth
+  const RACKET_Z  = 8;       // racket head sits at this height
   const ball = {
     x: 0, y: CH - 30, z: RACKET_Z,
     vx: 0, vy: 0, vz: 0,
@@ -208,26 +208,20 @@
   function serve() {
     if (ball.live || score.matchOver) return;
     if (score.server === 'player') {
-      // flick-driven, slow-mo. Convert pointer flick (screen px) into iso world dir.
-      const wf = unprojectVec(pointer.vxPeak, pointer.vyPeak);
-      const speed = Math.hypot(wf.x, wf.y);
-      // base shot toward opposite baseline
-      let tx = -wf.x * 0.05;
-      let ty = -CH + 20;
+      const tx = (Math.random() - 0.5) * (CW * 0.5);
+      const ty = -CH + 30;
       const dist = Math.hypot(tx - ball.x, ty - ball.y);
-      const v = 0.55 + Math.min(0.5, speed * 0.02);   // slow base + flick boost
-      ball.vx = (tx - ball.x) / dist * v;
-      ball.vy = (ty - ball.y) / dist * v;
-      ball.vz = 0.32;
+      ball.vx = (tx - ball.x) / dist * SERVE_VY;
+      ball.vy = (ty - ball.y) / dist * SERVE_VY;
+      ball.vz = SERVE_VZ;
       ball.owner = 'player';
-      pointer.vxPeak *= 0.2; pointer.vyPeak *= 0.2;
     } else {
-      const tx = (Math.random() - 0.5) * (CW * 0.6);
-      const ty = CH - 20;
+      const tx = (Math.random() - 0.5) * (CW * 0.5);
+      const ty = CH - 30;
       const dist = Math.hypot(tx - ball.x, ty - ball.y);
-      ball.vx = (tx - ball.x) / dist * 0.55;
-      ball.vy = (ty - ball.y) / dist * 0.55;
-      ball.vz = 0.32;
+      ball.vx = (tx - ball.x) / dist * SERVE_VY;
+      ball.vy = (ty - ball.y) / dist * SERVE_VY;
+      ball.vz = SERVE_VZ;
       ball.owner = 'cpu';
     }
     ball.live = true;
@@ -290,11 +284,17 @@
   // --- Update ---
   let tPrev = performance.now();
   // Slow-mo: physics tick scaled to about half normal speed.
-  const TIME_SCALE = 0.5;
-  const GRAV = 0.013;          // world units / frame^2 (very gentle)
+  const TIME_SCALE = 0.55;
+  const GRAV = 0.012;          // gentle gravity so ball traces a real arc
+  // With these values: straight shot covers ~ 2*vy*vz/GRAV ≈ 130 world units,
+  // flight time ≈ 2.8 s. Peak height ≈ 23 world units — a clear iso arc.
+  const HIT_VY = 1.4;
+  const HIT_VZ = 0.56;
+  const SERVE_VY = 1.5;
+  const SERVE_VZ = 0.55;
 
   function updatePlayer(dt) {
-    const sp = 0.9;
+    const sp = 1.6;
     const tx = player.tx != null ? player.tx : player.x;
     const ty = player.ty != null ? player.ty : player.y;
     const dx = tx - player.x, dy = ty - player.y;
@@ -318,7 +318,7 @@
       if (t > 0) tx = ball.x + ball.vx * t;
     }
     tx = clamp(tx, -CW + 4, CW - 4);
-    const sp = 0.7;
+    const sp = 1.2;
     const dx = tx - cpu.x;
     const step = clamp(dx, -sp * dt, sp * dt);
     cpu.vx = step / Math.max(dt, 0.001);
@@ -328,7 +328,7 @@
   function tryHit(side, prevPos) {
     // Hit if ball is near racket (in x,y) and at racket height (in z).
     const r = (side === 'p') ? player : cpu;
-    if (Math.abs(ball.z - RACKET_Z) > 6) return false;
+    if (ball.z > RACKET_Z + 8 || ball.z < 0.5) return false;
     if (Math.abs(ball.x - r.x) > RACKET_RX) return false;
     // Swept y check using prev position.
     const yMin = Math.min(prevPos.y, ball.y);
@@ -340,25 +340,20 @@
     if (side === 'p' && ball.y < 0) return false;
     if (side === 'c' && ball.y > 0) return false;
     if (side === 'p') {
-      // Player hits back — flick adds power and aim.
-      const wf = unprojectVec(pointer.vxPeak, pointer.vyPeak);
-      const aimX = clamp(r.x * 0.3 + wf.x * 0.05 + (Math.random() - 0.5) * 4, -CW + 8, CW - 8);
-      const tx = aimX, ty = -CH + 20;
+      const aimX = clamp(r.x * 0.3 + (Math.random() - 0.5) * 12, -CW + 10, CW - 10);
+      const tx = aimX, ty = -CH + 25;
       const dist = Math.hypot(tx - ball.x, ty - ball.y);
-      const speed = clamp(0.7 + Math.min(0.7, Math.hypot(wf.x, wf.y) * 0.04), 0.7, 1.2);
-      ball.vx = (tx - ball.x) / dist * speed;
-      ball.vy = (ty - ball.y) / dist * speed;
-      ball.vz = 0.42;
+      ball.vx = (tx - ball.x) / dist * HIT_VY;
+      ball.vy = (ty - ball.y) / dist * HIT_VY;
+      ball.vz = HIT_VZ;
       ball.owner = 'player';
-      pointer.vxPeak *= 0.25; pointer.vyPeak *= 0.25;
     } else {
-      const aimX = clamp(player.x + (Math.random() - 0.5) * 18, -CW + 8, CW - 8);
-      const tx = aimX, ty = CH - 20;
+      const aimX = clamp(player.x + (Math.random() - 0.5) * 24, -CW + 10, CW - 10);
+      const tx = aimX, ty = CH - 25;
       const dist = Math.hypot(tx - ball.x, ty - ball.y);
-      const speed = 0.78;
-      ball.vx = (tx - ball.x) / dist * speed;
-      ball.vy = (ty - ball.y) / dist * speed;
-      ball.vz = 0.4;
+      ball.vx = (tx - ball.x) / dist * HIT_VY;
+      ball.vy = (ty - ball.y) / dist * HIT_VY;
+      ball.vz = HIT_VZ;
       ball.owner = 'cpu';
     }
     ball.bounced = false;
@@ -460,10 +455,10 @@
     clearTimeout(autoServeT);
     setTimeout(() => {
       resetServe();
-      if (!score.matchOver && score.server === 'cpu') {
-        autoServeT = setTimeout(() => { if (!ball.live && !score.matchOver) serve(); }, 900);
+      if (!score.matchOver) {
+        autoServeT = setTimeout(() => { if (!ball.live && !score.matchOver) serve(); }, 1100);
       }
-    }, 600);
+    }, 700);
   }
 
   // --- Drawing (B&W) ---
@@ -598,6 +593,10 @@
   fitCanvas();
   updateScore();
   resetServe();
+  // Auto-start: CPU serves first so the rally takes off without any input.
+  score.server = 'cpu';
+  resetServe();
+  setTimeout(() => { if (!ball.live && !score.matchOver) serve(); }, 1200);
   requestAnimationFrame(t => { tPrev = t; step(t); });
 })();
 </script>
