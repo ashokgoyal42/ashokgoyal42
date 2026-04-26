@@ -2,82 +2,148 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Voice Maze</title>
 <style>
   html, body {
     margin: 0;
     padding: 0;
-    min-height: 100%;
+    height: 100%;
     background: #ffffff;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: #222;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
   }
-  .wrap {
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
     max-width: 640px;
     margin: 0 auto;
-    padding: 24px 16px 40px;
-    text-align: center;
+    padding: 6px 10px env(safe-area-inset-bottom) 10px;
+    box-sizing: border-box;
   }
-  h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: 0.5px; }
-  p.sub { margin: 0 0 18px; color: #666; font-size: 14px; }
+  header { text-align: center; flex: 0 0 auto; }
+  h1 { margin: 4px 0 0; font-size: 20px; letter-spacing: 0.5px; }
+  .sub { margin: 0; color: #666; font-size: 12px; }
   .stage {
-    display: inline-block;
-    background: #fff;
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 6px 0;
+  }
+  canvas {
+    display: block;
+    background: #ffffff;
     border: 1px solid #ddd;
-    border-radius: 10px;
-    padding: 12px;
+    border-radius: 8px;
+    touch-action: none;
   }
-  canvas { display: block; background: #ffffff; }
-  .hud {
-    margin-top: 14px;
+  .status {
+    flex: 0 0 auto;
+    text-align: center;
     font-size: 13px;
-    color: #555;
-    line-height: 1.5;
+    color: #b8860b;
+    min-height: 1.3em;
+    line-height: 1.3;
   }
-  .hud b { color: #222; }
+  .status.win { color: #1f7a3a; font-weight: 600; }
+  .heard {
+    flex: 0 0 auto;
+    text-align: center;
+    font-size: 12px;
+    color: #777;
+    min-height: 1.2em;
+  }
+  .heard b { color: #1e6fd9; }
   .controls {
-    margin-top: 12px;
+    flex: 0 0 auto;
     display: flex;
     gap: 8px;
     justify-content: center;
     flex-wrap: wrap;
+    padding: 6px 0;
   }
   button {
     font: inherit;
-    padding: 8px 14px;
+    font-size: 14px;
+    padding: 9px 14px;
     border: 1px solid #ccc;
     background: #fafafa;
     border-radius: 8px;
     cursor: pointer;
+    color: #222;
   }
-  button:hover { background: #f0f0f0; }
-  .status {
-    margin-top: 10px;
-    min-height: 1.4em;
-    font-size: 14px;
-    color: #b8860b;
+  button:active { transform: scale(0.98); }
+  button.mic.on {
+    background: #1e6fd9;
+    color: #fff;
+    border-color: #1e6fd9;
+    animation: pulse 1.4s ease-in-out infinite;
   }
-  .status.win { color: #1f7a3a; font-weight: 600; }
-  a.back { color: #888; font-size: 13px; text-decoration: none; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(30, 111, 217, 0.6); }
+    50%      { box-shadow: 0 0 0 6px rgba(30, 111, 217, 0); }
+  }
+  .vocab {
+    flex: 0 0 auto;
+    font-size: 11.5px;
+    color: #555;
+    background: #f7f7f7;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    padding: 8px 10px;
+    line-height: 1.5;
+  }
+  .vocab b { color: #222; }
+  .vocab code {
+    background: #fff;
+    border: 1px solid #e2e2e2;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11px;
+  }
+  a.back {
+    display: inline-block;
+    color: #888;
+    font-size: 12px;
+    text-decoration: none;
+    padding: 6px;
+  }
   a.back:hover { color: #333; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Voice Maze</h1>
-  <p class="sub">Walk in, find the exit. Touch the door with your arm to open it.</p>
-  <div class="stage">
-    <canvas id="game" width="520" height="520"></canvas>
+<div class="app">
+  <header>
+    <h1>Voice Maze</h1>
+    <p class="sub">Tap 🎤 then tell the player where to go.</p>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="game"></canvas>
   </div>
+
   <div class="status" id="status">&nbsp;</div>
-  <div class="hud">
-    <div><b>Arrows / WASD</b> &mdash; move one cell</div>
-    <div><b>Space</b> &mdash; extend arm (touch a door to open it)</div>
-  </div>
+  <div class="heard" id="heard">&nbsp;</div>
+
   <div class="controls">
+    <button id="mic" class="mic">🎤 Listen</button>
     <button id="reset">New maze</button>
-    <a class="back" href="index.html">&larr; back to games</a>
+    <a class="back" href="index.html">&larr; back</a>
+  </div>
+
+  <div class="vocab">
+    <b>Say:</b>
+    <code>up</code> <code>down</code> <code>left</code> <code>right</code> ·
+    <code>forward</code> <code>back</code> <code>turn around</code> ·
+    counts: <code>right two</code>, <code>up three</code> ·
+    <code>open</code> / <code>touch door</code> ·
+    <code>stop</code> ·
+    <code>new maze</code>
   </div>
 </div>
 
@@ -85,20 +151,45 @@
 (() => {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
   const statusEl = document.getElementById('status');
+  const heardEl = document.getElementById('heard');
+  const micBtn = document.getElementById('mic');
   const resetBtn = document.getElementById('reset');
 
-  const COLS = 13;
-  const ROWS = 13;
-  const CELL = 40;
-  const PAD = 0;
-  const W = COLS * CELL;
-  const H = ROWS * CELL;
-  canvas.width = W;
-  canvas.height = H;
+  const COLS = 11;
+  const ROWS = 11;
+  let CELL = 36; // recomputed on resize
+  let DPR = Math.max(1, window.devicePixelRatio || 1);
 
-  // Maze: each cell stores walls {n,e,s,w}. We carve passages with recursive backtracker.
-  let cells, player, facing, entrance, exit, exitOpen, animating, armAnim, won, entering;
+  let cells, player, facing, entrance, exit, exitOpen;
+  let animating, armAnim, won, entering;
+  let queue = []; // pending steps: array of dir chars
+  let lastBaseStatus = '';
+
+  function fitCanvas() {
+    const rect = stage.getBoundingClientRect();
+    const avail = Math.max(160, Math.min(rect.width, rect.height));
+    CELL = Math.floor(avail / Math.max(COLS, ROWS));
+    if (CELL < 18) CELL = 18;
+    const w = CELL * COLS;
+    const h = CELL * ROWS;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width = w * DPR;
+    canvas.height = h * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // Recompute player pixel position from grid coords if available.
+    if (player) {
+      if (player.gx < 0) {
+        player.px = -CELL / 2;
+        player.py = entrance.y * CELL + CELL / 2;
+      } else {
+        player.px = player.gx * CELL + CELL / 2;
+        player.py = player.gy * CELL + CELL / 2;
+      }
+    }
+  }
 
   function makeMaze() {
     const grid = [];
@@ -113,14 +204,12 @@
     const start = { x: 0, y: Math.floor(ROWS / 2) };
     grid[start.y][start.x].visited = true;
     stack.push(start);
-
     const dirs = [
       { dx: 0, dy: -1, a: 'n', b: 's' },
       { dx: 1, dy: 0, a: 'e', b: 'w' },
       { dx: 0, dy: 1, a: 's', b: 'n' },
       { dx: -1, dy: 0, a: 'w', b: 'e' },
     ];
-
     while (stack.length) {
       const cur = stack[stack.length - 1];
       const opts = [];
@@ -144,7 +233,6 @@
     cells = makeMaze();
     entrance = { x: 0, y: Math.floor(ROWS / 2) };
     exit = { x: COLS - 1, y: Math.floor(ROWS / 2) };
-    // Player starts just outside the entrance (offscreen left), then walks in.
     player = { px: -CELL / 2, py: entrance.y * CELL + CELL / 2, gx: -1, gy: entrance.y };
     facing = 'e';
     exitOpen = false;
@@ -152,11 +240,11 @@
     armAnim = 0;
     won = false;
     entering = true;
+    queue = [];
     setStatus('A door slams shut behind you...');
-    // Walk in to entrance cell.
     moveTo(entrance.x, entrance.y, () => {
       entering = false;
-      setStatus('Find the exit on the right. Touch the door with SPACE.');
+      baseStatus('Tap 🎤 and tell me where to go. Touch the door to open it.');
     });
   }
 
@@ -164,48 +252,63 @@
     statusEl.textContent = msg;
     statusEl.className = 'status' + (isWin ? ' win' : '');
   }
-
-  function canMove(gx, gy, dir) {
-    if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return false;
-    const c = cells[gy][gx];
-    return !c[dir];
+  function baseStatus(msg) {
+    lastBaseStatus = msg;
+    setStatus(msg);
   }
-
-  function tryStep(dir) {
-    if (animating || won || entering) return;
-    facing = dir;
-    const map = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
-    const [dx, dy] = map[dir];
-    const nx = player.gx + dx, ny = player.gy + dy;
-
-    // Stepping out through the exit (right edge) is allowed only if exit is open.
-    if (player.gx === exit.x && player.gy === exit.y && dir === 'e') {
-      if (exitOpen) {
-        moveTo(COLS, exit.y, () => {
-          won = true;
-          setStatus('You made it out! Click "New maze" to play again.', true);
-        });
-      } else {
-        flashStatus('The exit door is locked. Touch it with SPACE.');
-      }
-      return;
-    }
-
-    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
-    if (!canMove(player.gx, player.gy, dir)) {
-      flashStatus('A wall blocks you.');
-      return;
-    }
-    moveTo(nx, ny);
-  }
-
   let flashTimer = 0;
   function flashStatus(msg) {
     setStatus(msg);
     clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => {
-      if (!won) setStatus('Find the exit on the right. Touch the door with SPACE.');
-    }, 1500);
+    flashTimer = setTimeout(() => { if (!won) setStatus(lastBaseStatus); }, 1400);
+  }
+
+  function canMove(gx, gy, dir) {
+    if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return false;
+    return !cells[gy][gx][dir];
+  }
+
+  function opposite(dir) {
+    return { n: 's', s: 'n', e: 'w', w: 'e' }[dir];
+  }
+
+  function tryStep(dir) {
+    if (won || entering) return false;
+    facing = dir;
+    if (player.gx === exit.x && player.gy === exit.y && dir === 'e') {
+      if (exitOpen) {
+        moveTo(COLS, exit.y, () => {
+          won = true;
+          queue = [];
+          setStatus('You made it out! Say "new maze" to play again.', true);
+        });
+        return true;
+      }
+      flashStatus('The exit door is locked. Say "open" while facing it.');
+      return false;
+    }
+    const map = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
+    const [dx, dy] = map[dir];
+    const nx = player.gx + dx, ny = player.gy + dy;
+    if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return false;
+    if (!canMove(player.gx, player.gy, dir)) {
+      flashStatus('A wall blocks you.');
+      return false;
+    }
+    moveTo(nx, ny);
+    return true;
+  }
+
+  function pumpQueue() {
+    if (animating || won || entering) return;
+    while (queue.length) {
+      const dir = queue.shift();
+      const ok = tryStep(dir);
+      if (ok) return; // wait for animation, will resume in moveTo callback
+      // if blocked, drop the rest of the queued sequence
+      queue = [];
+      return;
+    }
   }
 
   function moveTo(gx, gy, done) {
@@ -214,7 +317,7 @@
     const targetX = gx * CELL + CELL / 2;
     const targetY = gy * CELL + CELL / 2;
     const t0 = performance.now();
-    const dur = 140;
+    const dur = 160;
     function tick(t) {
       const k = Math.min(1, (t - t0) / dur);
       const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
@@ -227,33 +330,38 @@
         player.gy = gy;
         animating = false;
         if (done) done();
+        else pumpQueue();
       }
     }
     requestAnimationFrame(tick);
   }
 
   function extendArm() {
-    if (animating || won || entering) return;
+    if (won || entering) return;
     armAnim = performance.now();
-    // Check whether the arm reaches the exit door.
     if (player.gx === exit.x && player.gy === exit.y && facing === 'e' && !exitOpen) {
       exitOpen = true;
-      setStatus('Click! The exit door swings open. Walk east to leave.');
+      baseStatus('Click! The door swings open. Say "right" to step out.');
       return;
     }
-    // Touching any other wall does nothing (yet).
+    if (!exitOpen) flashStatus('Nothing here. Get next to the exit and face right.');
   }
 
-  function draw() {
-    ctx.clearRect(0, 0, W, H);
+  function turnAround() {
+    if (won || entering) return;
+    facing = opposite(facing);
+    flashStatus('You turn around.');
+  }
 
-    // Floor
+  // ---------- drawing ----------
+  function draw() {
+    const W = COLS * CELL, H = ROWS * CELL;
+    ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
-    // Walls
     ctx.strokeStyle = '#222';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = Math.max(2, CELL / 14);
     ctx.lineCap = 'square';
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
@@ -261,104 +369,89 @@
         const x0 = x * CELL, y0 = y * CELL;
         if (c.n) line(x0, y0, x0 + CELL, y0);
         if (c.w) line(x0, y0, x0, y0 + CELL);
-        // Bottom and right walls drawn by neighbors / outer border below.
       }
     }
-    // Outer border (skip entrance and exit doorways).
-    // Top and bottom
     line(0, 0, W, 0);
     line(0, H, W, H);
-    // Left wall, with a gap at entrance (closed once player enters)
-    drawSideWall('w');
-    drawSideWall('e');
+    drawSideWall('w', H);
+    drawSideWall('e', W, H);
 
-    // Entrance door (left side at entrance row) — visible after player enters.
-    drawDoor(entrance.x, entrance.y, 'w', !entering, false); // closed once we're in
-    // Exit door (right side at exit row)
+    drawDoor(entrance.x, entrance.y, 'w', !entering, false);
     drawDoor(exit.x, exit.y, 'e', !exitOpen, exitOpen);
 
-    // Player
     drawPlayer();
   }
 
-  function drawSideWall(side) {
-    // Draw left/right outer walls in segments, leaving the entrance/exit gap.
+  function drawSideWall(side, W, H) {
     const isW = side === 'w';
-    const x = isW ? 0 : W;
+    const x = isW ? 0 : COLS * CELL;
     const skipY = (isW ? entrance.y : exit.y);
     const top = skipY * CELL;
     const bot = (skipY + 1) * CELL;
     line(x, 0, x, top);
-    line(x, bot, x, H);
+    line(x, bot, x, ROWS * CELL);
   }
 
   function drawDoor(gx, gy, side, closed, open) {
     const x0 = gx * CELL, y0 = gy * CELL;
     let x1, y1, x2, y2;
-    if (side === 'w') { x1 = x0; y1 = y0 + 4; x2 = x0; y2 = y0 + CELL - 4; }
-    else if (side === 'e') { x1 = x0 + CELL; y1 = y0 + 4; x2 = x0 + CELL; y2 = y0 + CELL - 4; }
+    const inset = Math.max(3, CELL * 0.1);
+    if (side === 'w') { x1 = x0; y1 = y0 + inset; x2 = x0; y2 = y0 + CELL - inset; }
+    else { x1 = x0 + CELL; y1 = y0 + inset; x2 = x0 + CELL; y2 = y0 + CELL - inset; }
 
     if (closed) {
       ctx.strokeStyle = open ? '#1f7a3a' : '#b8520a';
-      ctx.lineWidth = 6;
+      ctx.lineWidth = Math.max(4, CELL / 8);
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.stroke();
-      // Knob
       ctx.fillStyle = '#444';
-      const kx = side === 'w' ? x1 + 6 : x1 - 6;
+      const kx = side === 'w' ? x1 + 5 : x1 - 5;
       const ky = (y1 + y2) / 2;
       ctx.beginPath();
-      ctx.arc(kx, ky, 2.5, 0, Math.PI * 2);
+      ctx.arc(kx, ky, Math.max(2, CELL / 18), 0, Math.PI * 2);
       ctx.fill();
     } else {
-      // Open: draw a thin green frame on the side, gap in the wall.
       ctx.strokeStyle = '#1f7a3a';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
+      ctx.lineWidth = Math.max(2, CELL / 14);
       const ox = side === 'e' ? x1 - 8 : x1 + 8;
+      ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(ox, y1 - 2);
       ctx.moveTo(x1, y2);
       ctx.lineTo(ox, y2 + 2);
       ctx.stroke();
     }
-    // restore
     ctx.strokeStyle = '#222';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = Math.max(2, CELL / 14);
   }
 
   function line(x1, y1, x2, y2) {
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
   }
 
   function drawPlayer() {
-    const r = 11;
+    const r = Math.max(7, CELL * 0.28);
     ctx.fillStyle = '#1e6fd9';
     ctx.beginPath();
     ctx.arc(player.px, player.py, r, 0, Math.PI * 2);
     ctx.fill();
-    // Facing indicator (small triangle)
     const map = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
     const [fx, fy] = map[facing];
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(player.px + fx * 4, player.py + fy * 4, 2.5, 0, Math.PI * 2);
+    ctx.arc(player.px + fx * r * 0.45, player.py + fy * r * 0.45, r * 0.25, 0, Math.PI * 2);
     ctx.fill();
 
-    // Arm animation
     if (armAnim) {
-      const t = (performance.now() - armAnim) / 220;
+      const t = (performance.now() - armAnim) / 240;
       if (t > 1) {
         armAnim = 0;
       } else {
-        const reach = (t < 0.5 ? t * 2 : 1 - (t - 0.5) * 2) * (CELL / 2);
+        const reach = (t < 0.5 ? t * 2 : 1 - (t - 0.5) * 2) * (CELL * 0.55);
         ctx.strokeStyle = '#1e6fd9';
-        ctx.lineWidth = 4;
+        ctx.lineWidth = Math.max(3, CELL / 11);
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(player.px, player.py);
@@ -366,18 +459,170 @@
         ctx.stroke();
         ctx.fillStyle = '#1e6fd9';
         ctx.beginPath();
-        ctx.arc(player.px + fx * reach, player.py + fy * reach, 3.5, 0, Math.PI * 2);
+        ctx.arc(player.px + fx * reach, player.py + fy * reach, Math.max(3, CELL / 11), 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
 
-  function loop() {
-    draw();
-    requestAnimationFrame(loop);
+  function loop() { draw(); requestAnimationFrame(loop); }
+
+  // ---------- voice + command parsing ----------
+  const NUM = {
+    'one': 1, 'a': 1, 'an': 1, 'once': 1,
+    'two': 2, 'twice': 2, 'to': 2, 'too': 2,
+    'three': 3, 'tree': 3,
+    'four': 4, 'for': 4, 'fore': 4,
+    'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+  };
+  const ABS_DIR = {
+    'up': 'n', 'north': 'n', 'top': 'n',
+    'down': 's', 'south': 's', 'bottom': 's',
+    'left': 'w', 'west': 'w',
+    'right': 'e', 'east': 'e'
+  };
+
+  function tokenize(text) {
+    return text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
   }
 
-  // Input
+  function parseAndRun(text) {
+    const toks = tokenize(text);
+    if (!toks.length) return false;
+
+    const joined = toks.join(' ');
+
+    if (/\b(stop|halt|wait|cancel|freeze|pause)\b/.test(joined)) {
+      queue = [];
+      flashStatus('Stopped.');
+      return true;
+    }
+    if (/\b(new maze|reset|restart|new game)\b/.test(joined)) {
+      reset();
+      return true;
+    }
+    if (/\bturn around\b/.test(joined) || /\babout face\b/.test(joined)) {
+      turnAround();
+      return true;
+    }
+    if (/\b(open|touch|push|knock)\b/.test(joined)) {
+      extendArm();
+      return true;
+    }
+
+    // direction + optional count
+    let dir = null;
+    let count = 1;
+    let foundDirIdx = -1;
+    const FWD = new Set(['forward', 'ahead', 'go', 'move', 'walk', 'step', 'head', 'hurry']);
+    const BWD = new Set(['back', 'backward', 'backwards', 'reverse']);
+    for (let i = toks.length - 1; i >= 0; i--) {
+      const t = toks[i];
+      if (ABS_DIR[t]) { dir = ABS_DIR[t]; foundDirIdx = i; break; }
+      if (BWD.has(t)) { dir = opposite(facing); foundDirIdx = i; break; }
+      if (FWD.has(t)) { dir = facing; foundDirIdx = i; break; }
+    }
+    if (!dir) return false;
+
+    for (const t of toks) {
+      if (NUM[t]) { count = NUM[t]; break; }
+      const n = parseInt(t, 10);
+      if (!isNaN(n) && n > 0 && n <= 20) { count = n; break; }
+    }
+    count = Math.min(count, COLS + ROWS);
+
+    queue = [];
+    for (let i = 0; i < count; i++) queue.push(dir);
+    pumpQueue();
+    return true;
+  }
+
+  // Web Speech API
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  let listening = false;
+  let wantListening = false;
+
+  function setMicState(on) {
+    listening = on;
+    micBtn.textContent = on ? '🎤 Listening' : '🎤 Listen';
+    micBtn.classList.toggle('on', on);
+  }
+
+  function startListening() {
+    if (!SR) {
+      flashStatus('Voice not supported on this browser. Try Chrome or Safari.');
+      return;
+    }
+    if (recognition) return;
+    recognition = new SR();
+    recognition.lang = 'en-US';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => { setMicState(true); };
+    recognition.onerror = (e) => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        flashStatus('Mic permission denied. Allow it in browser settings.');
+        wantListening = false;
+      } else if (e.error === 'no-speech') {
+        // benign, ignore
+      } else {
+        flashStatus('Voice error: ' + e.error);
+      }
+    };
+    recognition.onend = () => {
+      setMicState(false);
+      const r = recognition;
+      recognition = null;
+      if (wantListening) {
+        // auto-restart (mobile browsers often stop after pauses)
+        setTimeout(() => { if (wantListening) startListening(); }, 250);
+      }
+    };
+    recognition.onresult = (ev) => {
+      let interim = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const res = ev.results[i];
+        const txt = res[0].transcript.trim();
+        if (res.isFinal) {
+          heardEl.innerHTML = 'heard: <b>' + escapeHtml(txt) + '</b>';
+          parseAndRun(txt);
+        } else {
+          interim += txt + ' ';
+        }
+      }
+      if (interim) heardEl.innerHTML = 'heard: <b>' + escapeHtml(interim.trim()) + '</b>';
+    };
+
+    try { recognition.start(); } catch (err) { /* ignore inflight start */ }
+  }
+
+  function stopListening() {
+    wantListening = false;
+    if (recognition) {
+      try { recognition.stop(); } catch (e) {}
+    }
+    setMicState(false);
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  micBtn.addEventListener('click', () => {
+    if (listening || wantListening) {
+      stopListening();
+    } else {
+      wantListening = true;
+      startListening();
+    }
+  });
+
+  resetBtn.addEventListener('click', () => reset());
+
+  // Keyboard fallback for desktop testing
   const keyMap = {
     ArrowUp: 'n', ArrowDown: 's', ArrowLeft: 'w', ArrowRight: 'e',
     w: 'n', s: 's', a: 'w', d: 'e',
@@ -386,11 +631,19 @@
   window.addEventListener('keydown', (e) => {
     if (e.key === ' ') { e.preventDefault(); extendArm(); return; }
     const dir = keyMap[e.key];
-    if (dir) { e.preventDefault(); tryStep(dir); }
+    if (dir) { e.preventDefault(); queue = [dir]; pumpQueue(); }
   });
 
-  resetBtn.addEventListener('click', reset);
+  window.addEventListener('resize', fitCanvas);
+  window.addEventListener('orientationchange', () => setTimeout(fitCanvas, 50));
 
+  if (!SR) {
+    micBtn.disabled = true;
+    micBtn.textContent = '🎤 unsupported';
+    flashStatus('This browser has no Speech Recognition. Use Chrome on Android or Safari on iOS.');
+  }
+
+  fitCanvas();
   reset();
   requestAnimationFrame(loop);
 })();
