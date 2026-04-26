@@ -21,7 +21,7 @@
     align-items: stretch;
     gap: 6px;
     width: 100%;
-    max-width: 440px;
+    max-width: 460px;
     height: 100dvh;
     padding: 6px 8px;
     box-sizing: border-box;
@@ -60,12 +60,7 @@
     cursor: pointer;
     color: #111;
   }
-  #scoreline {
-    font-variant-numeric: tabular-nums;
-    font-weight: 800;
-    font-size: 15px;
-    letter-spacing: 0.5px;
-  }
+  #scoreline { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 15px; letter-spacing: 0.5px; }
   #best { color: #555; font-size: 11px; }
   a.back { color: #fff; font-size: 11px; text-align: center; text-decoration: none; }
 </style>
@@ -84,22 +79,21 @@
 </div>
 <script>
 (() => {
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
-  const scoreEl = document.getElementById('scoreline');
-  const bestEl  = document.getElementById('best');
+  const canvas   = document.getElementById('c');
+  const ctx      = canvas.getContext('2d');
+  const scoreEl  = document.getElementById('scoreline');
+  const bestEl   = document.getElementById('best');
   const serveBtn = document.getElementById('serve');
 
-  // Iso projection. World units: x: -CW..CW (court width),
-  //                              y: 0..CH  (front wall at y=0, back wall = front opening at y=CH),
-  //                              z: height (floor at z=0, ceiling unbounded).
-  // Front wall sits at y = 0. Player and ball live at y > 0.
-  let W = canvas.width, H = canvas.height;
-  const CW = 60;       // half court width
-  const CH = 160;      // court depth (player can roam from y=8 to y=CH-4)
-  const WALL_H = 50;   // height of the front wall (visual + collision cap)
-  const TIN_H = 8;     // bottom of valid wall: ball must hit wall ABOVE this height.
+  // World units. Court is a closed glass box.
+  // x: -CW..CW (left/right walls), y: -CD..CD (front/back walls), z: 0..CH (floor/ceiling).
+  const CW = 50;   // half width
+  const CD = 70;   // half depth
+  const CH = 60;   // ceiling height
+
+  // Iso projection (true 2:1). Origin & SCALE chosen at fit time.
   let ORIGX = 0, ORIGY = 0, SCALE = 1;
+  let W = canvas.width, H = canvas.height;
 
   function iso(x, y, z = 0) {
     return {
@@ -108,6 +102,7 @@
     };
   }
   function unproject(px, py) {
+    // Inverse for z=0: px = ORIGX + (x-y)S, py = ORIGY + (x+y)/2 S
     const a = (px - ORIGX) / SCALE;
     const b = (py - ORIGY) * 2 / SCALE;
     return { x: (a + b) / 2, y: (b - a) / 2 };
@@ -115,81 +110,85 @@
 
   function fitCanvas() {
     const rect = canvas.getBoundingClientRect();
-    const w = Math.min(480, Math.max(320, Math.round(rect.width)));
-    const h = Math.min(900, Math.max(480, Math.round(rect.height)));
+    const w = Math.min(560, Math.max(320, Math.round(rect.width)));
+    const h = Math.min(960, Math.max(480, Math.round(rect.height)));
     canvas.width = w; canvas.height = h;
     W = w; H = h;
-    // Horizontal extent of the floor (corners): from (-CW,CH) to (CW,0)
-    //   x range = (CW - 0) - (-CW - CH) = 2*CW + CH
-    const horizExtent = 2 * CW + CH;
-    // Vertical extent: from iso(-CW,0,WALL_H).y (top-left of wall) to iso(CW,CH).y (front-right floor)
-    //   top = (-CW + 0)*0.5 - WALL_H
-    //   bot = (CW + CH)*0.5
-    const top = -CW * 0.5 - WALL_H;
-    const bot = (CW + CH) * 0.5;
-    const vertExtent = bot - top;
-    const sx = (W - 24) / horizExtent;
-    const sy = (H - 24) / vertExtent;
-    SCALE = Math.min(sx, sy);
-    ORIGX = W / 2 - ((-CW + CH) * 0.5) * SCALE; // centre the floor horizontally
-    ORIGY = 12 - top * SCALE;                   // pin top to the canvas top
+    // iso extents of the box (all 8 corners considered):
+    //   width on screen  = 2 * (CW + CD) * SCALE
+    //   height on screen = (CW + CD) * SCALE + CH * SCALE
+    const PADDING = 18;
+    const wExtent = 2 * (CW + CD);
+    const hExtent = (CW + CD) + CH;
+    SCALE = Math.min((w - PADDING * 2) / wExtent, (h - PADDING * 2) / hExtent);
+    // Centre the box.
+    // x extent is symmetric about iso(0,0,0).x, so ORIGX = W/2.
+    ORIGX = W / 2;
+    // y midpoint of iso bounds = ORIGY + (top + bot)/2
+    //   top = -(CW + CD)/2 * SCALE - CH * SCALE
+    //   bot = +(CW + CD)/2 * SCALE
+    //   mid = ORIGY - CH/2 * SCALE
+    // Want mid = H/2  =>  ORIGY = H/2 + CH/2 * SCALE
+    ORIGY = H / 2 + (CH / 2) * SCALE;
   }
 
   // --- State ---
-  const RACKET_RX = 12;     // half racket width  (world units)
-  const RACKET_RY = 7;      // half racket depth
-  const RACKET_Z  = 8;
+  const RACKET_RX = 13, RACKET_RY = 8, RACKET_Z = 9;
+  const BALL_R = 2.6;
   const ball = {
-    x: 0, y: CH * 0.6, z: RACKET_Z,
+    x: 0, y: CD * 0.5, z: RACKET_Z,
     vx: 0, vy: 0, vz: 0,
     live: false,
-    bounces: 0,           // floor bounces since last wall hit
-    lastTouch: 'none',    // 'wall' | 'racket' | 'none'
+    floorBounces: 0,
+    lastTouch: 'none',
   };
-  const player = { x: 0, y: CH * 0.6, vx: 0, vy: 0, tx: null, ty: null };
+  const player = { x: 0, y: CD * 0.5, tx: null, ty: null };
   const pointer = { active: false, x: 0, y: 0 };
 
   let rally = 0;
   let best = parseInt(localStorage.getItem('isosquash_best') || '0', 10);
-  let message = 'auto-serving…';
-  let messageT = 60;
+  let message = '';
+  let messageT = 0;
   let dead = false;
 
-  function setMessage(s, frames = 90) { message = s; messageT = frames; }
+  const setMessage = (s, t = 90) => { message = s; messageT = t; };
   function refreshHUD() {
     scoreEl.textContent = `rally ${rally}`;
     bestEl.textContent  = `best ${best}`;
+    serveBtn.textContent = dead ? 'play' : 'serve';
   }
 
-  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
   function resetServe() {
     ball.live = false;
     ball.vx = ball.vy = ball.vz = 0;
-    ball.bounces = 0;
+    ball.floorBounces = 0;
     ball.lastTouch = 'none';
     ball.x = player.x;
-    ball.y = player.y - 4;
+    ball.y = player.y;
     ball.z = RACKET_Z;
     dead = false;
+    refreshHUD();
   }
+
   function serve() {
     if (ball.live) return;
-    // Send the ball toward the front wall (y=0), with a slight angle and arc.
-    const targetX = (Math.random() - 0.5) * (CW * 0.7);
-    const targetY = 0;
-    const dx = targetX - ball.x;
-    const dy = targetY - ball.y;
-    const dist = Math.hypot(dx, dy);
+    // Aim toward a random spot on the front wall (y = -CD).
+    const tx = (Math.random() - 0.5) * (CW * 1.2);
+    const ty = -CD;
+    const dx = tx - ball.x, dy = ty - ball.y;
+    const d  = Math.hypot(dx, dy);
     const speed = 1.7;
-    ball.vx = (dx / dist) * speed;
-    ball.vy = (dy / dist) * speed;       // negative (toward wall)
+    ball.vx = (dx / d) * speed;
+    ball.vy = (dy / d) * speed;
     ball.vz = 0.55;
     ball.live = true;
-    ball.bounces = 0;
-    ball.lastTouch = 'racket';           // count the serve as the first racket touch
+    ball.floorBounces = 0;
+    ball.lastTouch = 'racket';
     setMessage('go!', 30);
   }
+
   serveBtn.addEventListener('click', () => {
     if (dead) { rally = 0; refreshHUD(); resetServe(); }
     serve();
@@ -205,12 +204,11 @@
   function setTargetFromPointer(p) {
     const w = unproject(p.x, p.y);
     player.tx = clamp(w.x, -CW + 4, CW - 4);
-    player.ty = clamp(w.y, 8, CH - 4);
+    player.ty = clamp(w.y, -CD + 4, CD - 4);
   }
   canvas.addEventListener('pointerdown', e => {
     const p = canvasCoords(e);
-    pointer.x = p.x; pointer.y = p.y;
-    pointer.active = true;
+    pointer.active = true; pointer.x = p.x; pointer.y = p.y;
     setTargetFromPointer(p);
     if (dead) { rally = 0; refreshHUD(); resetServe(); serve(); return; }
     if (!ball.live) serve();
@@ -218,64 +216,59 @@
   canvas.addEventListener('pointermove', e => {
     e.preventDefault();
     const p = canvasCoords(e);
-    pointer.x = p.x; pointer.y = p.y;
-    pointer.active = true;
+    pointer.x = p.x; pointer.y = p.y; pointer.active = true;
     setTargetFromPointer(p);
   });
-  function endPointer() { pointer.active = false; }
+  const endPointer = () => { pointer.active = false; };
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
   canvas.addEventListener('pointerleave', endPointer);
 
   // --- Update ---
   let tPrev = performance.now();
-  const TIME_SCALE = 0.55;
+  const TIME_SCALE = 0.5;
   const GRAV = 0.012;
 
   function updatePlayer(dt) {
-    const sp = 1.6;
+    const sp = 1.7;
     const tx = player.tx != null ? player.tx : player.x;
     const ty = player.ty != null ? player.ty : player.y;
     const dx = tx - player.x, dy = ty - player.y;
-    const d = Math.hypot(dx, dy);
+    const d  = Math.hypot(dx, dy);
     if (d > 0.01) {
       const step = Math.min(sp * dt, d);
-      player.vx = (dx / d) * step / Math.max(dt, 0.001);
-      player.vy = (dy / d) * step / Math.max(dt, 0.001);
       player.x += (dx / d) * step;
       player.y += (dy / d) * step;
-    } else {
-      player.vx = player.vy = 0;
     }
     player.x = clamp(player.x, -CW + 4, CW - 4);
-    player.y = clamp(player.y, 8, CH - 4);
+    player.y = clamp(player.y, -CD + 4, CD - 4);
   }
 
   function tryHit(prevPos) {
-    if (ball.z > RACKET_Z + 10 || ball.z < 0.5) return false;
+    if (ball.z > RACKET_Z + 12 || ball.z < 0.5) return false;
     if (Math.abs(ball.x - player.x) > RACKET_RX) return false;
-    const yMin = Math.min(prevPos.y, ball.y);
-    const yMax = Math.max(prevPos.y, ball.y);
-    const rMin = player.y - RACKET_RY;
-    const rMax = player.y + RACKET_RY;
-    if (yMax < rMin || yMin > rMax) return false;
-    // Only hit balls that are heading TOWARD the player (i.e. away from wall: vy > 0).
-    if (ball.vy <= 0) return false;
-    // Send ball back to wall. Aim slightly off-centre based on racket position.
-    const aimX = clamp(player.x * -0.3 + (Math.random() - 0.5) * 12, -CW + 8, CW - 8);
-    const aimY = 0;
-    const dx = aimX - ball.x, dy = aimY - ball.y;
-    const dist = Math.hypot(dx, dy);
+    const yMin = Math.min(prevPos.y, ball.y) - RACKET_RY;
+    const yMax = Math.max(prevPos.y, ball.y) + RACKET_RY;
+    if (player.y < yMin || player.y > yMax) return false;
+
+    // Compute target — favour the wall furthest from current ball direction.
+    // Simple: aim at the wall opposite to ball.vy direction (so we send it back across).
+    let tx = (Math.random() - 0.5) * (CW * 1.2);
+    let ty = ball.vy < 0 ? CD - 8 : -CD + 8;          // send to opposite y wall
+    if (Math.abs(ball.vy) < 0.05) ty = -CD + 8;        // edge case
+
+    const dx = tx - ball.x, dy = ty - ball.y;
+    const d  = Math.hypot(dx, dy);
     const speed = 1.7;
-    ball.vx = (dx / dist) * speed;
-    ball.vy = (dy / dist) * speed;
+    ball.vx = (dx / d) * speed;
+    ball.vy = (dy / d) * speed;
     ball.vz = 0.55;
-    ball.bounces = 0;
+    ball.floorBounces = 0;
     ball.lastTouch = 'racket';
     rally += 1;
     if (rally > best) { best = rally; localStorage.setItem('isosquash_best', String(best)); }
     refreshHUD();
-    setMessage('thwack', 16);
+    setMessage('thwack', 14);
     return true;
   }
 
@@ -283,12 +276,12 @@
     if (!ball.live) return;
     ball.live = false;
     dead = true;
-    setMessage(reason + ' — tap to play', 0);
-    serveBtn.textContent = 'play';
+    setMessage(reason, 0);
+    refreshHUD();
   }
 
   function step(now) {
-    let dtMs = Math.min(50, now - tPrev);
+    const dtMs = Math.min(50, now - tPrev);
     tPrev = now;
     const dt = (dtMs / 16.67) * TIME_SCALE;
 
@@ -302,95 +295,62 @@
       ball.z += ball.vz * dt;
       ball.vz -= GRAV * dt;
 
-      // Side-wall reflections (left/right walls of the squash court).
-      if (ball.x < -CW) {
-        ball.x = -CW + (-CW - ball.x);
-        ball.vx = Math.abs(ball.vx) * 0.95;
-      } else if (ball.x > CW) {
-        ball.x = CW - (ball.x - CW);
-        ball.vx = -Math.abs(ball.vx) * 0.95;
-      }
+      // Wall reflections — closed glass box.
+      const D = 0.97;  // wall damping
+      if (ball.x < -CW + BALL_R) { ball.x = -CW + BALL_R; ball.vx =  Math.abs(ball.vx) * D; ball.lastTouch = 'wall'; }
+      if (ball.x >  CW - BALL_R) { ball.x =  CW - BALL_R; ball.vx = -Math.abs(ball.vx) * D; ball.lastTouch = 'wall'; }
+      if (ball.y < -CD + BALL_R) { ball.y = -CD + BALL_R; ball.vy =  Math.abs(ball.vy) * D; ball.lastTouch = 'wall'; }
+      if (ball.y >  CD - BALL_R) { ball.y =  CD - BALL_R; ball.vy = -Math.abs(ball.vy) * D; ball.lastTouch = 'wall'; }
 
-      // Front wall: y <= 0. Ball must clear the tin (z > TIN_H) to continue.
-      if (ball.y <= 0 && ball.vy < 0) {
-        // Find z at impact
-        const f = prev.y / (prev.y - ball.y + 1e-9);     // 0..1
-        const zAtWall = prev.z + (ball.z - prev.z) * f;
-        if (zAtWall < TIN_H) {
-          endRally('tin!');
+      // Ceiling
+      if (ball.z > CH - BALL_R) { ball.z = CH - BALL_R; ball.vz = -Math.abs(ball.vz) * D; ball.lastTouch = 'wall'; }
+
+      // Floor
+      if (ball.z <= 0 && ball.vz < 0) {
+        ball.z = 0;
+        ball.floorBounces += 1;
+        if (ball.floorBounces >= 2) {
+          endRally('two bounces!');
         } else {
-          ball.y = 0 + (-ball.y) * 0.0;   // park on wall plane (will get pushed back below)
-          ball.y = -ball.y;                // reflect any overshoot
-          ball.vy = -ball.vy * 0.95;
-          ball.vx *= 0.98;
-          ball.lastTouch = 'wall';
-          ball.bounces = 0;                // wall hit clears bounces
-          if (ball.y < 0.5) ball.y = 0.5;  // nudge off the wall
+          ball.vz = Math.max(0.42, Math.abs(ball.vz) * 0.8);
+          ball.vx *= 0.95;
+          ball.vy *= 0.95;
+          ball.lastTouch = 'floor';
         }
       }
 
-      if (ball.live) {
-        // Floor bounce
-        if (ball.z <= 0 && ball.vz < 0) {
-          ball.z = 0;
-          ball.bounces += 1;
-          if (ball.bounces >= 2) {
-            endRally('two bounces!');
-          } else {
-            // Between racket touches with no wall hit = also a fault.
-            if (ball.lastTouch === 'racket' && ball.vy > 0) {
-              // Player hit but ball never reached the wall — fault.
-              // (Player aimed back-court without hitting wall.)
-              endRally('missed wall!');
-            } else {
-              ball.vz = 0.42;
-              ball.vx *= 0.93;
-              ball.vy *= 0.93;
-            }
-          }
-        }
-      }
-
-      if (ball.live) {
-        // Out the back of the court — also dead.
-        if (ball.y > CH + 4) {
-          endRally('back wall out!');
-        }
-      }
-
-      if (ball.live) {
-        // Try racket contact only if ball is heading away from wall (toward player).
-        if (ball.vy > 0) tryHit(prev);
-      }
+      // Try player contact
+      if (ball.live) tryHit(prev);
     } else {
-      // Park ball at racket
+      // Park ball at player while not live (between rallies / on serve)
       ball.x = player.x;
-      ball.y = player.y - 4;
+      ball.y = player.y;
       ball.z = RACKET_Z;
     }
 
     if (messageT > 0) messageT--;
-
     draw();
     requestAnimationFrame(step);
   }
 
-  // --- Drawing (B&W) ---
-  function strokeLine(a, b) {
+  // --- Drawing ---
+  function strokeLine(a, b, w = 1, c = '#111') {
+    ctx.strokeStyle = c; ctx.lineWidth = w;
     ctx.beginPath();
     ctx.moveTo(a.x + 0.5, a.y + 0.5);
     ctx.lineTo(b.x + 0.5, b.y + 0.5);
     ctx.stroke();
   }
-  function strokePoly(pts) {
+  function strokePoly(pts, w = 1, c = '#111') {
+    ctx.strokeStyle = c; ctx.lineWidth = w;
     ctx.beginPath();
     ctx.moveTo(pts[0].x + 0.5, pts[0].y + 0.5);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x + 0.5, pts[i].y + 0.5);
     ctx.closePath();
     ctx.stroke();
   }
-  function fillPoly(pts, fill) {
-    ctx.fillStyle = fill;
+  function fillPoly(pts, c) {
+    ctx.fillStyle = c;
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -402,55 +362,52 @@
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, W, H);
 
-    // FRONT WALL (filled light, then outlined). It's the rectangle at y=0, going up to WALL_H.
-    const wBL = iso(-CW, 0, 0);
-    const wBR = iso( CW, 0, 0);
-    const wTR = iso( CW, 0, WALL_H);
-    const wTL = iso(-CW, 0, WALL_H);
-    fillPoly([wBL, wBR, wTR, wTL], '#f4f4f4');
-    ctx.strokeStyle = '#111';
-    ctx.lineWidth = 2;
-    strokePoly([wBL, wBR, wTR, wTL]);
+    // 8 corners of the box
+    const A0 = iso(-CW, -CD, 0),   B0 = iso( CW, -CD, 0),
+          C0 = iso( CW,  CD, 0),   D0 = iso(-CW,  CD, 0);
+    const A1 = iso(-CW, -CD, CH),  B1 = iso( CW, -CD, CH),
+          C1 = iso( CW,  CD, CH),  D1 = iso(-CW,  CD, CH);
 
-    // Tin line on the front wall (target line: hits BELOW this lose).
-    ctx.lineWidth = 1.5;
-    strokeLine(iso(-CW, 0, TIN_H), iso(CW, 0, TIN_H));
+    // Faint glass tint on the back-most wall faces (the ones we'd be looking through).
+    const GL = 'rgba(60,90,130,0.06)';
+    fillPoly([A0, B0, B1, A1], GL);   // front wall (y = -CD)
+    fillPoly([A0, D0, D1, A1], GL);   // left wall  (x = -CW)
 
-    // Service line on the wall (decorative, classic squash midline).
-    ctx.lineWidth = 1;
-    ctx.save();
-    ctx.setLineDash([4, 3]);
-    strokeLine(iso(-CW, 0, WALL_H * 0.55), iso(CW, 0, WALL_H * 0.55));
-    ctx.restore();
+    // Floor outline (bold).
+    strokePoly([A0, B0, C0, D0], 2);
 
-    // FLOOR perimeter
-    ctx.lineWidth = 2;
-    strokePoly([iso(-CW, 0), iso(CW, 0), iso(CW, CH), iso(-CW, CH)]);
+    // Service line + half-court line (back half).
+    strokeLine(iso(-CW, CD * 0.2), iso(CW, CD * 0.2), 1);
+    strokeLine(iso(0, CD * 0.2), iso(0, CD), 1);
 
-    // Short line (across) and half-court line (down the middle of the back half).
-    ctx.lineWidth = 1;
-    strokeLine(iso(-CW, CH * 0.55), iso(CW, CH * 0.55));
-    strokeLine(iso(0, CH * 0.55), iso(0, CH));
+    // Ceiling outline (light).
+    strokePoly([A1, B1, C1, D1], 1, '#9aa');
 
-    // Service boxes on the back half — small 20x20 squares either side of the half line.
-    const sboxY1 = CH * 0.55;
-    const sboxY2 = CH * 0.55 + 30;
-    const sboxX  = 30;
-    strokePoly([iso(-sboxX, sboxY1), iso(0, sboxY1), iso(0, sboxY2), iso(-sboxX, sboxY2)]);
-    strokePoly([iso(sboxX, sboxY1),  iso(0, sboxY1), iso(0, sboxY2), iso(sboxX,  sboxY2)]);
+    // 4 vertical edges (the corner posts of the glass box).
+    strokeLine(A0, A1, 1.4);
+    strokeLine(B0, B1, 1.4);
+    strokeLine(C0, C1, 1.4);
+    strokeLine(D0, D1, 1.4);
+
+    // Glass mullions (one horizontal line halfway up each wall, faint).
+    const M = '#bbb';
+    const midZ = CH * 0.55;
+    strokeLine(iso(-CW, -CD, midZ), iso( CW, -CD, midZ), 1, M);   // front
+    strokeLine(iso(-CW,  CD, midZ), iso( CW,  CD, midZ), 1, M);   // back
+    strokeLine(iso(-CW, -CD, midZ), iso(-CW,  CD, midZ), 1, M);   // left
+    strokeLine(iso( CW, -CD, midZ), iso( CW,  CD, midZ), 1, M);   // right
   }
 
-  function drawShadow(x, y, z) {
+  function drawShadow(x, y) {
     const s = iso(x, y, 0);
-    const k = clamp(1 - z * 0.012, 0.4, 1);
     ctx.fillStyle = 'rgba(0,0,0,0.18)';
     ctx.beginPath();
-    ctx.ellipse(s.x, s.y, 5 * k * SCALE * 0.5, 2.5 * k * SCALE * 0.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(s.x, s.y, 5 * SCALE * 0.5, 2.5 * SCALE * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
   function drawRacket(p) {
-    drawShadow(p.x, p.y, 0);
+    drawShadow(p.x, p.y);
     const head = iso(p.x, p.y, RACKET_Z);
     const grip = iso(p.x, p.y, 0);
     ctx.strokeStyle = '#111';
@@ -465,26 +422,32 @@
     ctx.lineTo(head.x + RACKET_RX * SCALE - 2, head.y);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(head.x + 0.5, head.y + RACKET_RY * SCALE * 0.5);
-    ctx.lineTo(grip.x + 0.5, grip.y + 0.5);
+    ctx.moveTo(head.x, head.y);
+    ctx.lineTo(grip.x, grip.y);
     ctx.stroke();
   }
 
   function drawBall() {
-    drawShadow(ball.x, ball.y, ball.z);
+    drawShadow(ball.x, ball.y);
     const b = iso(ball.x, ball.y, ball.z);
     ctx.fillStyle = '#111';
     ctx.beginPath();
-    ctx.arc(b.x, b.y, Math.max(2.5, 3 * SCALE * 0.5), 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, Math.max(2.5, BALL_R * SCALE), 0, Math.PI * 2);
     ctx.fill();
   }
 
   function drawHUD() {
-    if (message && messageT >= 0) {
+    if (message) {
       ctx.fillStyle = '#111';
       ctx.font = '11px ui-monospace, Menlo, monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(message, W / 2, 16);
+      ctx.fillText(message, W / 2, 14);
+    }
+    if (dead) {
+      ctx.fillStyle = '#111';
+      ctx.font = '13px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('tap to play', W / 2, H - 14);
     }
   }
 
